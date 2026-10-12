@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "verified_on": "2026-10-09",
+  "sources": {
+    "significant_wave_height": {"provider":"Copernicus Marine","product_id":"NWSHELF_REANALYSIS_WAV_004_015","dataset_id":"MetO-NWS-WAV-RAN","version":"202007","variable":"VHM0","unit":"m","spatial_resolution":"3 km","frequency":"PT3H","coverage":"1980-01-01 to 2026-05-31","source_type":"REANALYSIS"},
+    "current_speed": {"provider":"Copernicus Marine","product_id":"NWSHELF_MULTIYEAR_PHY_004_009","dataset_id":"cmems_mod_nws_phy-uv_my_7km-2D_PT1H-i","version":"202112","variables":["uo","vo"],"unit":"m s-1","spatial_resolution":"7 km","frequency":"PT1H","coverage":"1993-01-01 to 2026-08-01","source_type":"REANALYSIS","belfast_subset":"MASKED"},
+    "sea_surface_temperature": {"provider":"Copernicus Marine","product_id":"NWSHELF_MULTIYEAR_PHY_004_009","dataset_id":"cmems_mod_nws_phy-sst_my_7km-2D_PT1H-i","version":"202112","variable":"thetao","unit":"degrees_C","spatial_resolution":"7 km","frequency":"PT1H","coverage":"1993-01-01 to 2026-08-01","source_type":"REANALYSIS","belfast_subset":"MASKED"},
+    "atmospheric_weather": {"provider":"Open-Meteo historical archive","model":"era5","provenance_label":"ERA5 via Open-Meteo historical archive","variables":["wind_speed_10m","wind_gusts_10m","precipitation","temperature_2m","pressure_msl"],"frequency":"PT1H","source_type":"REANALYSIS"}
+  }
+}

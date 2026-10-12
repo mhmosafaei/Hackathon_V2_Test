@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "capabilities": {
+    "significant_wave_height": {
+      "units": "m",
+      "adapters": [{"id":"cmems_waves_fc","provider":"COPERNICUS","product":"NWSHELF_ANALYSISFORECAST_WAV_004_014","dataset":"cmems_mod_nws_wav_anfc_1.5km_PT1H-i","variables":["VHM0","VTM02","VMDR","VTPK"],"mode":"FORECAST","role":"PREDICTIVE","live_verified":"2026-10-09"}]
+    },
+    "wind_speed": {
+      "units": "m/s",
+      "adapters": []
+    },
+    "suspended_particulate_matter": {
+      "units": "mg/L",
+      "adapters": [{"id":"cmems_spm","provider":"COPERNICUS","product":"OCEANCOLOUR_NWS_BGC_HR_L3_NRT_009_203","dataset":"cmems_obs_oc_nws_bgc_tur-spm-chl_nrt_l3-hr-mosaic_P1D-m","variables":["SPM","TUR"],"mode":"OBSERVATION","role":"SUPPORTIVE","live_verified":"2026-10-09","belfast_harbour_subset":"MASKED"}],
+      "external_requirements": [
+        {"source_type": "LOCAL_SENSOR", "role": "PRIMARY_COMPLIANCE", "integrated_in_mvp": false}
+      ]
+    },
+    "dissolved_oxygen": {
+      "units": "mg/L",
+      "adapters": [{"id":"cmems_o2","provider":"COPERNICUS","product":"NWSHELF_ANALYSISFORECAST_BGC_004_002","dataset":"cmems_mod_nws_bgc-o2_anfc_7km-3D_P1D-m","variables":["o2"],"mode":"FORECAST","role":"SUPPORTIVE","live_verified":"2026-10-09","belfast_harbour_subset":"MASKED"}],
+      "external_requirements": [
+        {"source_type": "LOCAL_SENSOR", "role": "PRIMARY_COMPLIANCE", "integrated_in_mvp": false}
+      ]
+    },
+    "current_speed": {"units":"m/s","adapters":[{"id":"cmems_currents_fc","provider":"COPERNICUS","product":"NWSHELF_ANALYSISFORECAST_PHY_004_013","dataset":"cmems_mod_nws_phy-cur_anfc_1.5km-2D_PT15M-i","variables":["uo","vo"],"mode":"FORECAST","role":"PREDICTIVE","live_verified":"2026-10-09"}]},
+    "sea_surface_temperature": {"units":"degrees_Celsius","adapters":[{"id":"cmems_sst_fc","provider":"COPERNICUS","product":"NWSHELF_ANALYSISFORECAST_PHY_004_013","dataset":"cmems_mod_nws_phy-sst_anfc_1.5km-2D_PT1H-i","variables":["thetao"],"mode":"FORECAST","role":"SUPPORTIVE","live_verified":"2026-10-09"}]}
+  }
+}

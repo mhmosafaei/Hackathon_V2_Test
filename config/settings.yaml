@@ -1,0 +1,5 @@
+mode: OFFLINE
+timezone: Europe/London
+default_forecast_horizon_hours: 168
+cache_stale_after_hours: 24
+openai_model: gpt-4.1-mini

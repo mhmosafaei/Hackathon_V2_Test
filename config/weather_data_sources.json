@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "sources": {
+    "belfast_ecmwf_ifs": {
+      "provider": "Open-Meteo",
+      "model": "ecmwf_ifs025",
+      "provenance_label": "ECMWF IFS via Open-Meteo",
+      "data_type": "FORECAST",
+      "cache_ttl_hours": 12,
+      "bounded_forecast_days": 3,
+      "variables": ["wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "precipitation", "temperature_2m", "pressure_msl", "relative_humidity_2m", "cloud_cover", "visibility"],
+      "role": "PREDICTIVE",
+      "deciding_evidence": false
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "provider": "Open-Meteo",
+  "model": "ecmwf_ifs025",
+  "provenance_label": "ECMWF IFS via Open-Meteo",
+  "data_type": "FORECAST",
+  "retrieved_at": "2026-10-12T08:15:47.658394+00:00",
+  "requested_coordinates": [
+    54.6,
+    -5.9
+  ],
+  "response_latitude": 54.6,
+  "response_longitude": -5.9,
+  "elevation": null,
+  "utc_offset_seconds": 0,
+  "hourly_units": {
+    "time": "iso8601",
+    "wind_speed_10m": "km/h"
+  },
+  "hourly": {
+    "time": [
+      "2026-10-09T00:00",
+      "2026-10-09T01:00"
+    ],
+    "wind_speed_10m": [
+      1,
+      2
+    ]
+  },
+  "forecast_hours": 2,
+  "endpoint": "https://api.open-meteo.com/v1/forecast"
+}

@@ -1,0 +1,8 @@
+DEMONSTRATION CONTRACT — NOT A PROJECT CONTRACT
+
+1. Marine operations shall not proceed where significant wave height exceeds 1.5 m.
+2. Operations require wind speed not to exceed 30 km/h.
+3. Operations require wind gusts not to exceed 45 km/h.
+4. A continuous workable weather window of 2 hours is required before mobilisation.
+5. Weather standby shall be recorded with contemporaneous forecast evidence. Weather risk is contractor risk.
+6. Any extension of time for adverse weather is subject to written notice and human contractual assessment.

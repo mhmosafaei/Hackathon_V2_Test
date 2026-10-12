@@ -1,0 +1,276 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "permit_number": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "licensee": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "authority": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "activity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "valid_from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "valid_until": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_spans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "page": {
+                "type": "integer"
+              },
+              "quotation": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "page",
+              "quotation"
+            ]
+          }
+        }
+      },
+      "required": [
+        "permit_number",
+        "licensee",
+        "authority",
+        "activity",
+        "valid_from",
+        "valid_until",
+        "source_spans"
+      ]
+    },
+    "conditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "number": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "PRIOR",
+              "DURING",
+              "AFTER",
+              "GENERAL"
+            ]
+          },
+          "requirement": {
+            "type": "string"
+          },
+          "important_limit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timing": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "Notification / Deadline",
+              "Positioning / Geographic",
+              "Monitoring / Survey",
+              "Reporting / Recordkeeping",
+              "Operational / Safety",
+              "Approval / Administrative",
+              "Other"
+            ]
+          },
+          "source_spans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "quotation": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "page",
+                "quotation"
+              ]
+            }
+          }
+        },
+        "required": [
+          "number",
+          "phase",
+          "requirement",
+          "important_limit",
+          "timing",
+          "category",
+          "source_spans"
+        ]
+      }
+    },
+    "key_limits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "condition_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_spans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "quotation": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "page",
+                "quotation"
+              ]
+            }
+          }
+        },
+        "required": [
+          "label",
+          "value",
+          "condition_numbers",
+          "source_spans"
+        ]
+      }
+    },
+    "geofences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "radius",
+              "coordinate_boundary",
+              "route",
+              "corridor",
+              "polygon",
+              "exclusion_zone",
+              "restricted_segment",
+              "named_area",
+              "other"
+            ]
+          },
+          "coordinates_or_boundary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "restriction": {
+            "type": "string"
+          },
+          "source_pages": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "source_spans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "quotation": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "page",
+                "quotation"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "type",
+          "coordinates_or_boundary",
+          "restriction",
+          "source_pages",
+          "source_spans"
+        ]
+      }
+    }
+  },
+  "required": [
+    "summary",
+    "conditions",
+    "key_limits",
+    "geofences"
+  ]
+}

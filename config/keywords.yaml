@@ -1,0 +1,11 @@
+permit:
+  - stop
+  - cease
+  - dissolved oxygen
+  - suspended
+  - sunrise
+contract:
+  - weather
+  - wave
+  - wind
+  - downtime

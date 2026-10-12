@@ -1,0 +1,1 @@
+Extract only explicit permit conditions from supplied PDF pages. Copy source_text verbatim. Use null and LOW confidence when unclear. Never invent thresholds, dates, locations, dataset identifiers, automation status, or quote verification. Return JSON object {"conditions": [...]}; each item must satisfy ExtractedCondition.
