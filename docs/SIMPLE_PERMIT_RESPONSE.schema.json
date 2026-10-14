@@ -2,6 +2,181 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "spatial_context": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "location_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "coordinates_original": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "coordinate_system": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "easting": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "northing": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "latitude": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "longitude": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "geometry_type": {
+            "type": "string",
+            "enum": [
+              "point",
+              "route",
+              "polygon",
+              "area",
+              "unknown"
+            ]
+          },
+          "source_page": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "source_spans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "quotation": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "page",
+                "quotation"
+              ]
+            }
+          }
+        },
+        "required": [
+          "location_name",
+          "coordinates_original",
+          "coordinate_system",
+          "source_reference",
+          "easting",
+          "northing",
+          "latitude",
+          "longitude",
+          "geometry_type",
+          "source_page",
+          "source_spans"
+        ]
+      }
+    },
+    "temporal_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "permit_valid_from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permit_valid_until": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "operation_start": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "operation_end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_reference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "operation_time_restrictions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_spans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "page": {
+                "type": "integer"
+              },
+              "quotation": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "page",
+              "quotation"
+            ]
+          }
+        }
+      },
+      "required": [
+        "permit_valid_from",
+        "permit_valid_until",
+        "operation_start",
+        "operation_end",
+        "source_reference",
+        "operation_time_restrictions",
+        "source_spans"
+      ]
+    },
     "summary": {
       "type": "object",
       "additionalProperties": false,
@@ -194,6 +369,125 @@
         ]
       }
     },
+    "environmental_requirements": {
+      "type": "array",
+      "description": "Exhaustive source-linked environmental candidates; include thresholdless, informational, directional, derived, unsupported and manual-evidence conditions.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "condition_id": {
+            "type": "string"
+          },
+          "requirement_text": {
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          },
+          "canonical_variable": {
+            "type": "string"
+          },
+          "evidence_type": {
+            "type": "string"
+          },
+          "source_page": {
+            "type": "integer",
+            "description": "Physical PDF page containing the cited quotation."
+          },
+          "source_spans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "quotation": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "page",
+                "quotation"
+              ]
+            }
+          },
+          "operator": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "<",
+              "<=",
+              ">",
+              ">=",
+              "==",
+              "!=",
+              null
+            ]
+          },
+          "threshold": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "temporal_requirement": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "depth_requirement": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "geographic_scope": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "explicit_requirement": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "condition_id",
+          "requirement_text",
+          "variable",
+          "canonical_variable",
+          "evidence_type",
+          "source_page",
+          "source_spans",
+          "operator",
+          "threshold",
+          "unit",
+          "temporal_requirement",
+          "depth_requirement",
+          "geographic_scope",
+          "notes",
+          "explicit_requirement"
+        ]
+      }
+    },
     "geofences": {
       "type": "array",
       "items": {
@@ -268,9 +562,12 @@
     }
   },
   "required": [
+    "spatial_context",
+    "temporal_context",
     "summary",
     "conditions",
     "key_limits",
+    "environmental_requirements",
     "geofences"
   ]
 }

@@ -2,28 +2,147 @@
 import argparse
 import asyncio
 import logging
+import json
+from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 from urllib.parse import unquote
+from pydantic import BaseModel, ConfigDict, Field
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .simple_analysis import analyze
+from .simple_analysis import ExtractionIncompleteError, analyze
+from src.environmental.models import EvaluationInput
+from src.environmental.service import evaluate, provider_status
+from src.environmental.capabilities import capability_matrix
+from .persisted_analysis import load_persisted_analysis
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def create_app(root=ROOT, *, transport=None, dist=None):
+class CoordinateInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    analysis_id: str
+    location_index: int = Field(ge=0)
+    force: bool = False
+
+
+class RestoreInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    document_sha256: str = Field(pattern=r'^[0-9a-fA-F]{64}$')
+    analysis_run_id: str = Field(pattern=r'^[0-9a-fA-F]{32,64}$')
+
+
+
+
+def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports=None, coordinate_transport=None):
     app = FastAPI(docs_url=None, redoc_url=None)
     app.state.boot_id = uuid4().hex
     app.state.busy = False
+    app.state.analyses = {}
+    # Environmental retrieval results are session-scoped derived state. They
+    # are intentionally separate from immutable permit analysis artifacts.
+    app.state.environmental_results = {}
+    app.state.conversions = {}
+
+    @app.post('/api/coordinates/convert')
+    async def coordinates(inputs: CoordinateInput, request: Request):
+        origin = request.headers.get('origin')
+        if origin and origin != str(request.base_url).rstrip('/'):
+            return JSONResponse({'error':'Request origin rejected.'}, status_code=403)
+        if request.headers.get('x-session-id') != app.state.boot_id:
+            return JSONResponse({'error':'Application restarted. Select your PDF again.'}, status_code=409)
+        analysis = app.state.analyses.get(inputs.analysis_id)
+        locations = analysis.get('spatial_context', []) if analysis else []
+        if inputs.location_index >= len(locations):
+            return JSONResponse({'error':'Source location not available.'}, status_code=404)
+        location = locations[inputs.location_index]
+        if not location.get('source_verified') or location.get('geometry_type') != 'point':
+            return JSONResponse({'error':'Verified source point required. Review source coordinates.'}, status_code=422)
+        if app.state.busy:
+            return JSONResponse({'error':'A request is already running.'}, status_code=409)
+        if transport and coordinate_transport is None:
+            return JSONResponse({'error':'Mock conversion transport is not configured. No live request made.'}, status_code=409)
+        key = (inputs.analysis_id, location.get('coordinates_original'), location.get('coordinate_system'))
+        if key in app.state.conversions and not inputs.force:
+            return app.state.conversions[key]
+        app.state.busy = True
+        try:
+            from .coordinate_conversion import convert
+            result = await asyncio.to_thread(convert, location,
+                root/'cache'/'coordinate_conversions'/inputs.analysis_id, transport=coordinate_transport)
+            app.state.conversions[key] = result
+            return result
+        except Exception:
+            return JSONResponse({'error':'Coordinate conversion could not be verified. Review the source coordinate system or enter a confirmed WGS84 location manually. No automatic retry.'}, status_code=422)
+        finally:
+            app.state.busy = False
 
     @app.get('/api/session')
     async def session():
-        return {'boot_id': app.state.boot_id, 'mode': 'MOCK' if transport else 'LIVE'}
+        active_analysis_id = next(iter(app.state.analyses), None)
+        return {'boot_id': app.state.boot_id, 'mode': 'MOCK' if transport else 'LIVE',
+                'provider_status': provider_status(), 'environmental_capabilities': capability_matrix(),
+                'environmental_result': app.state.environmental_results.get(active_analysis_id)}
+
+    @app.post('/api/restore')
+    async def restore(inputs: RestoreInput, request: Request):
+        origin = request.headers.get('origin')
+        if origin and origin != str(request.base_url).rstrip('/'):
+            return JSONResponse({'error': 'Request origin rejected.'}, status_code=403)
+        if request.headers.get('x-session-id') != app.state.boot_id:
+            return JSONResponse({'error': 'Application restarted. Refresh the session.'}, status_code=409)
+        try:
+            result = load_persisted_analysis(root, inputs.document_sha256, inputs.analysis_run_id)
+        except FileNotFoundError:
+            return JSONResponse({'error': 'Persisted analysis run was not found.'}, status_code=404)
+        except (ValueError, json.JSONDecodeError):
+            return JSONResponse({'error': 'Persisted analysis reference or artifact is invalid.'}, status_code=422)
+        app.state.analyses.clear()
+        app.state.environmental_results.clear()
+        app.state.analyses[result['analysis_id']] = result
+        return result
+
+    @app.get('/api/environmental/capabilities')
+    async def environmental_capabilities():
+        return {'capabilities': capability_matrix()}
+
+    @app.post('/api/environmental')
+    async def environmental(inputs: EvaluationInput, request: Request):
+        origin = request.headers.get('origin')
+        if origin and origin != str(request.base_url).rstrip('/'):
+            return JSONResponse({'error': 'Request origin rejected.'}, status_code=403)
+        if request.headers.get('x-session-id') != app.state.boot_id:
+            return JSONResponse({'error': 'Application restarted. Select your PDF again.'}, status_code=409)
+        analysis = app.state.analyses.get(inputs.analysis_id)
+        if not analysis:
+            return JSONResponse({'error': 'No active analysis for this session.'}, status_code=404)
+        if app.state.busy:
+            return JSONResponse({'error': 'A request is already running.'}, status_code=409)
+        app.state.busy = True
+        try:
+            adapters = environmental_transports
+            if not transport and adapters is not None:
+                # Partial marine override must not silently remove the existing
+                # forecast connector. Calls still require explicit Fetch.
+                from src.environmental.ecmwf import retrieve as weather_retrieve
+                adapters = {'ECMWF_FORECAST':weather_retrieve, **adapters}
+            if transport and adapters is None:
+                from src.environmental.fixture import mock_evidence
+                adapters = {name: mock_evidence for name in ['COPERNICUS_MARINE', 'ECMWF_FORECAST', 'ERA5']}
+            result = await asyncio.to_thread(evaluate, analysis, inputs,
+                root/'cache'/'simple_environment'/app.state.boot_id/inputs.analysis_id, transports=adapters)
+            result['mode'] = 'MOCK' if transport else 'LIVE'
+            # Associate only a successfully returned aggregate result. A
+            # provider/evaluation exception leaves any prior result intact.
+            stored_result = {**result, 'analysis_id': inputs.analysis_id}
+            app.state.environmental_results[inputs.analysis_id] = stored_result
+            return result
+        finally:
+            app.state.busy = False
 
     @app.post('/api/analyze')
     async def run(request: Request):
@@ -43,9 +162,30 @@ def create_app(root=ROOT, *, transport=None, dist=None):
         if app.state.busy:
             return JSONResponse({'error': 'An analysis is already running.'}, status_code=409)
         app.state.busy = True
+        # A new document starts a new active session; never expose the prior
+        # document's environmental evidence while it is being analyzed.
+        app.state.analyses.clear()
+        app.state.environmental_results.clear()
         try:
             result = await asyncio.to_thread(analyze, bytes(chunks), unquote(request.headers.get('x-filename', 'permit.pdf')), root, transport=transport)
+            result = {**result, 'document_sha256': sha256(bytes(chunks)).hexdigest(), 'restored_from_persistence': False}
+            # Active process memory only; never restore historical environmental state.
+            app.state.analyses.clear()
+            app.state.environmental_results.clear()
+            app.state.analyses[result['analysis_id']] = result
             return result
+        except ExtractionIncompleteError as exc:
+            logging.getLogger(__name__).warning('Permit analysis incomplete: %s', exc.category)
+            audit = exc.audit or {}
+            return JSONResponse({
+                'error': 'EXTRACTION_INCOMPLETE',
+                'analysis_run_id': exc.analysis_id,
+                'extracted_count': audit.get('extracted_count', 0),
+                'candidate_count': audit.get('candidate_count', 0),
+                'missing_count': audit.get('missing_count', 0),
+                'missing_conditions': audit.get('missing_conditions', []),
+                'message': 'Environmental extraction incomplete. Re-analysis or human review is required.',
+            }, status_code=422)
         except Exception as exc:
             # Only safe category/type: never SDK exception messages or request payloads.
             logging.getLogger(__name__).error('Permit analysis failed: %s / %s', type(exc).__name__, getattr(exc, 'category', 'ANALYSIS_FAILED'))

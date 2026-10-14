@@ -1,5 +1,8 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Anchor, ArrowUpRight, FileText, Upload, Plus, Search, ShieldCheck, LoaderCircle, AlertCircle, ChevronDown, Waves} from 'lucide-react';
+import Environmental from './Environmental.jsx';
+import brandLogo from './assets/permitpulse-logo.png';
+import brandWordmark from './assets/permitpulse-wordmark.png';
+import {ArrowUpRight, FileText, Upload, Plus, Search, ShieldCheck, LoaderCircle, AlertCircle, ChevronDown, Waves} from 'lucide-react';
 import {BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell} from 'recharts';
 
 export const phases = ['PRIOR', 'DURING', 'AFTER', 'GENERAL'];
@@ -58,7 +61,7 @@ export function Results({analysis}) {
   const unverified = analysis.conditions.filter(c => !c.source_verified).length;
   const summary = analysis.summary;
   return <>
-    <div className="page-heading"><div><div className="eyebrow">PERMIT INTELLIGENCE</div><h1>Your permit, at a glance.</h1><p>{analysis.filename} <span className="dot">·</span> {analysis.page_count} pages</p></div><span className="status"><ShieldCheck size={15}/> Human review required</span></div>
+    <div className="page-heading"><div><div className="eyebrow">PERMIT INTELLIGENCE</div><h1>Your permit, at a glance.</h1><p>{analysis.filename} <span className="dot">·</span> {analysis.page_count} pages <span className="dot">·</span> Run {analysis.analysis_id}</p><small>{analysis.restoration_status === 'INCOMPLETE' ? `INCOMPLETE · ${analysis.missing_count || 0} environmental records missing` : 'Extraction complete'}{analysis.restored_from_persistence ? ' · Restored from persisted analysis' : ''}</small></div><span className="status"><ShieldCheck size={15}/> Human review required</span></div>
     {analysis.mode === 'MOCK' && <div className="notice">Synthetic demonstration · These are mocked records, not extracted Kilkeel evidence.</div>}
     <div className="summary-grid">{[['Permit number', summary.permit_number], ['Licensee', summary.licensee], ['Issuing authority', summary.authority], ['Validity', `${fallback(summary.valid_from)} — ${fallback(summary.valid_until)}`], ['Activity', summary.activity], ['Total conditions', analysis.conditions.length]].map(([label, value]) => <section className="card metric" key={label}><div className="eyebrow">{label}</div><strong>{fallback(value)}</strong></section>)}<GeofenceCard geofences={analysis.geofences}/></div>
     <section className="card limits"><div className="section-heading"><div><h2>Key Permit Limits</h2><p>Important values and deadlines identified in the document</p></div><FileText size={20}/></div>
@@ -81,9 +84,11 @@ export default function App() {
   const [currentAnalysis, setCurrentAnalysis] = useState(null);
   const [status, setStatus] = useState('empty');
   const [error, setError] = useState('');
+  const [tab, setTab] = useState('permit');
   const input = useRef(null);
   const generation = useRef(0);
   const boot = useRef(null);
+  const restoredBoot = useRef(null);
   useEffect(() => {
     let mounted = true;
     const check = async () => {
@@ -94,29 +99,51 @@ export default function App() {
         if (!mounted) return;
         if (boot.current && boot.current !== s.boot_id) reset();
         boot.current = s.boot_id; setSession(s);
+        if (restoredBoot.current !== s.boot_id) {
+          restoredBoot.current = s.boot_id;
+          const query = new URLSearchParams(window.location.search);
+          const queryHash = query.get('document_sha256'), queryRun = query.get('analysis_run_id');
+          const raw = queryHash && queryRun ? JSON.stringify({document_sha256:queryHash, analysis_run_id:queryRun}) : localStorage.getItem('permitpulse:lastAnalysisRef');
+          if (raw) {
+            try {
+              const ref = JSON.parse(raw);
+              const restored = await fetch('/api/restore', {method:'POST', headers:{'Content-Type':'application/json','X-Session-Id':s.boot_id}, body:JSON.stringify(ref)});
+              if (restored.ok && mounted) { setCurrentAnalysis(await restored.json()); setStatus('complete'); setTab('permit'); }
+            } catch { /* A missing or malformed saved reference never triggers analysis. */ }
+          }
+        }
       } catch { /* A transient health failure never triggers extraction. */ }
     };
     check(); const timer = setInterval(check, 3000);
     return () => {mounted = false; clearInterval(timer);};
   }, []);
-  function reset() { generation.current++; setCurrentAnalysis(null); setFile(null); setStatus('empty'); setError(''); if (input.current) input.current.value = ''; }
+  function reset() { generation.current++; setCurrentAnalysis(null); setTab('permit'); setFile(null); setStatus('empty'); setError(''); if (input.current) input.current.value = ''; }
   async function analyze() {
     if (!file || !session || status === 'loading') return;
     const ticket = ++generation.current;
     setStatus('loading'); setError(''); setCurrentAnalysis(null);
     try {
       const response = await fetch('/api/analyze', {method: 'POST', headers: {'Content-Type': 'application/pdf', 'X-Filename': encodeURIComponent(file.name), 'X-Session-Id': session.boot_id}, body: file});
-      if (!response.ok) throw new Error('analysis failed');
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        if (detail.error === 'EXTRACTION_INCOMPLETE') {
+          throw new Error(`Environmental extraction incomplete: ${detail.extracted_count || 0} of ${detail.candidate_count || 0} candidate requirements extracted. Re-analysis or human review is required.`);
+        }
+        throw new Error('analysis failed');
+      }
       const result = await response.json();
       if (ticket !== generation.current) return;
-      setCurrentAnalysis(result); setStatus('complete');
-    } catch {
+      localStorage.setItem('permitpulse:lastAnalysisRef', JSON.stringify({document_sha256:result.document_sha256, analysis_run_id:result.analysis_id}));
+      setCurrentAnalysis(result); setTab('permit'); setStatus('complete');
+    } catch (cause) {
       if (ticket !== generation.current) return;
-      setStatus('error'); setError('Permit analysis could not be completed.');
+      setStatus('error'); setError(cause?.message || 'Permit analysis could not be completed.');
     }
   }
-  return <div className="app"><header className="header"><div className="brand"><div className="brand-mark"><Anchor size={25}/></div><div><strong>PermitPulse</strong><span>AI-Powered Maritime Permit Intelligence</span></div></div><button className="button secondary" onClick={reset} disabled={status === 'loading'}><Plus size={16}/> New Analysis</button></header>
-    <main>{currentAnalysis ? <Results analysis={currentAnalysis}/> : <>
+  return <div className="app"><header className="header"><div className="brand"><img className="brand-symbol" src={brandLogo} alt=""/><div><img className="brand-wordmark" src={brandWordmark} alt="PermitPulse"/><span>AI-Powered Maritime Permit Intelligence</span></div></div><button className="button secondary" onClick={reset} disabled={status === 'loading'}><Plus size={16}/> New Analysis</button></header>
+    <main><nav className="intelligence-tabs" aria-label="Intelligence views"><button aria-pressed={tab === 'permit'} onClick={() => setTab('permit')}>Permit Intelligence</button><button aria-pressed={tab === 'environment'} onClick={() => setTab('environment')}>Environmental Intelligence</button></nav>
+    <div hidden={tab !== 'environment'}><Environmental key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session}/></div>
+    <div hidden={tab !== 'permit'}>{currentAnalysis ? <Results analysis={currentAnalysis}/> : <>
       <div className="empty-heading"><div className="eyebrow">CLARITY BEFORE YOU OPERATE</div><h1>Analyze a Marine Permit</h1><p>Upload a PDF to extract its conditions, deadlines,<br className="desktop-break"/> operational limits and key compliance requirements.</p></div>
       <section className="upload-card card"><div className="upload-icon">{status === 'loading' ? <LoaderCircle className="spinner" size={30}/> : <Upload size={30}/>}</div>
         {status === 'loading' ? <div role="status"><h2>Analyzing permit…</h2><p>Reading your document and extracting conditions, limits and deadlines.</p><div className="progress-track"><div/></div><small>Preparing your dashboard. Please keep this window open.</small></div> : <>
@@ -129,5 +156,5 @@ export default function App() {
       {session?.mode === 'MOCK' && <div className="mock-label">Offline preview · Synthetic mocked responses · No OpenAI calls</div>}
       <div className="empty-state"><Waves size={26}/><p>No permit analyzed yet. Upload a permit to begin.</p></div>
       <div className="features">{[['Complete conditions', 'Numbered requirements and administrative duties.'], ['Limits & deadlines', 'Important values, timing and restrictions.'], ['Original evidence', 'Source quotations and physical page references.']].map(([title, description]) => <div key={title}><FileText size={18}/><h3>{title}</h3><p>{description}</p></div>)}</div>
-    </>}</main><div className="bottom-line"><span>PermitPulse</span><span>Evidence first. Human review always.</span></div></div>;
+    </>}</div></main><div className="bottom-line"><span>PermitPulse</span><span>Evidence first. Human review always.</span></div></div>;
 }

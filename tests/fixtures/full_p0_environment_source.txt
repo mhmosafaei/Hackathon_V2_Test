@@ -1,0 +1,22 @@
+--- PAGE 4 ---
+23. General administrative condition.
+24. Significant wave height evidence is required.
+25. Mean wave period evidence is required.
+26. Wave direction shall be recorded.
+27. Eastward current component shall be available.
+28. Northward current component shall be available.
+29. Current speed shall be available.
+30. Current direction shall be recorded.
+31. Wind speed shall be recorded.
+32. Wind direction shall be recorded.
+33. Wind gust shall be recorded.
+
+--- PAGE 5 ---
+34. Precipitation evidence is required.
+35. Visibility evidence is required.
+36. Air temperature evidence is required.
+37. Sea-surface height evidence is required.
+38. Sea-surface temperature evidence is required.
+39. Dissolved oxygen evidence is required.
+40. Turbidity in FNU requires manual evidence.
+41. Turbidity in NTU is unsupported and must remain visible.

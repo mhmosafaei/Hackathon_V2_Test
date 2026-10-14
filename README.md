@@ -25,6 +25,13 @@ For a separately authorized live test, start without `--mock`, with the existing
 environment-driven `OPENAI_API_KEY` and `OPENAI_MODEL`. No credentials belong in
 the React frontend. See [implementation, verification and live-test steps](docs/SIMPLE_REACT_DASHBOARD.md).
 
+The Simple React application also provides **Environmental Intelligence**.
+The same single extraction identifies source-backed environmental requirements;
+local code routes them, and only **Fetch Environmental Data** requests evidence
+for an explicit location and UTC period. New Analysis clears both tabs. The
+mock server uses clearly labelled synthetic provider responses. See
+[supported variables, verification, limitations and controlled live-test steps](docs/SIMPLE_ENVIRONMENTAL_INTELLIGENCE.md).
+
 ## Legacy Streamlit application
 
 The existing Streamlit, candidate-extraction, environmental and contract modules

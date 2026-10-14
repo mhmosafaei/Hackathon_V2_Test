@@ -20,7 +20,28 @@ def mock_request(packet):
             geofences.append({'name': 'Test Zone', 'description': 'Synthetic disposal area', 'type': 'radius',
                 'coordinates_or_boundary': 'radius 0.5 NM', 'restriction': sentence,
                 'source_pages': [page.page_number], 'source_spans': [{'page': page.page_number, 'quotation': sentence}]})
-    return {'geofences': geofences, 'summary': {'permit_number': 'DEMO-2026', 'licensee': 'Example Harbour Ltd (synthetic)',
+    environmental = []
+    sentence = 'Significant wave height shall not exceed 2.5 m during works.'
+    for page in packet['pages']:
+        if sentence in page.text:
+            environmental.append({'condition_id': '1', 'source_page': page.page_number,
+                'requirement_text': sentence, 'variable': 'significant wave height',
+                'canonical_variable': 'significant_wave_height', 'operator': '<=', 'threshold': 2.5,
+                'unit': 'm', 'temporal_requirement': 'during works', 'depth_requirement': 'surface',
+                'geographic_scope': None, 'evidence_type': 'forecast', 'explicit_requirement': True,
+                'notes': None, 'source_spans': [{'page': page.page_number, 'quotation': sentence}]})
+    contexts = []
+    context_sentence = 'Synthetic work point: WGS84 latitude 54.1 longitude -6.1.'
+    for page in packet['pages']:
+        if context_sentence in page.text:
+            contexts.append(dict(location_name='Synthetic work point',coordinates_original='WGS84 latitude 54.1 longitude -6.1',
+                coordinate_system='WGS84',geometry_type='point',latitude=54.1,longitude=-6.1,source_reference=None,
+                easting=None,northing=None,source_page=page.page_number,
+                source_spans=[{'page':page.page_number,'quotation':context_sentence}]))
+    return {'spatial_context': contexts, 'temporal_context': {
+        'permit_valid_from': None, 'permit_valid_until': None, 'operation_start': None, 'operation_end': None,
+        'operation_time_restrictions': [], 'source_reference': None, 'source_spans': []},
+        'environmental_requirements': environmental, 'geofences': geofences, 'summary': {'permit_number': 'DEMO-2026', 'licensee': 'Example Harbour Ltd (synthetic)',
         'authority': 'Example Marine Authority', 'activity': 'Synthetic marine works', 'valid_from': None,
         'valid_until': None, 'source_spans': span},
         'conditions': [{'number': str(i), 'phase': PHASES[(i - 1) % 4],

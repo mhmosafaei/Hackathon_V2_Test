@@ -1,5 +1,139 @@
 # PermitPulse Implementation Journal
 
+## 2026-10-12 — Environmental retrieval diagnostics and presentation fixes
+
+Diagnosed Narrow Water live analysis/cache offline and inspected the existing
+browser results without fetching. Weather KeyError was missing transport wiring;
+gust was an unmapped canonical alias. Added precise safe worker/service errors,
+explicit NTU/FNU and missing oxygen-depth guards, existing forecast adapter
+wiring, gust aliases and informational provenance routing. Historical Copernicus
+exception reasons were discarded and cannot be retroactively identified.
+SST is genuinely misquoted and wrongly attributed, not a verifier formatting bug;
+retained source-verification block and did not rewrite source evidence.
+Actual point fields already matched React; 940px global minimum table width
+clipped card content. Added compact populated tables and explicit indeterminate
+threshold conclusions/UTC coverage ranges. Real cached waves/currents genuinely
+miss requested endpoints; temporal/coastal safeguards are unchanged.
+
+Full offline tests: 232 backend passed (12.12s, one existing Starlette warning),
+42 frontend passed (13.38s). Build passed (8.10s, existing bundle warning).
+No live provider/OpenAI calls. No backend restart or manual acceptance performed.
+See ENVIRONMENTAL_RETRIEVAL_DIAGNOSIS.md for exact periods, mappings, gaps and
+source-verification findings. User must restart and run live acceptance manually.
+
+## 2026-10-12 — Replace local conversion with explicit online action
+
+Per user specification, replaced PROJ4js conversion with a dedicated explicit-
+click-only /api/coordinates/convert service. Initial permit extraction remains
+unchanged and source coordinates are not converted automatically. Configured
+OpenAI model is gpt-4.1-mini; strict structured response, 60-second timeout,
+600-token output ceiling, zero retries and per-attempt persistent one-request
+ledger. Minimal source-only input; no geocoding or environmental fetch.
+Backend gates finite/ranged WGS84 values, enums, exact original-coordinate
+identity, high confidence and converted status. UI keeps independent location
+states, blocks double clicks, caches results, and enables Use location only for
+eligible results. Copying never fetches environmental data or creates rules.
+Original permit results/reviews remain untouched. Removed superseded local
+conversion utility/tests/dependency. See COORDINATE_CONVERSION.md for contract,
+provenance and the limitation that model confidence/bounds are not independent
+proof of mathematical/geodetic accuracy.
+
+Full offline backend regression: 219 passed, one existing Starlette warning,
+12.23 seconds. Frontend: 40 passed, 9.33 seconds. Build passed, 7.80 seconds,
+existing bundle-size advisory. Zero real API requests. Backend restart is
+required to load the new route; no active user analysis was cleared during
+implementation. No live conversion acceptance was attempted.
+
+## 2026-10-12 — Local Irish Grid environmental-query conversion
+
+Added local PROJ4js transformation for explicit source-verified point coordinates
+in Irish Grid (IGR/Irish Grid Reference, EPSG:29902/29903). The UI requires an
+explicit confirmation/conversion click before enabling Use location. Generic IGR
+is displayed as an EPSG:29903 interpretation requiring datum confirmation, not
+as a datum proved by the document. Original quotations, grid coordinates and
+analysis artifacts remain untouched; the derived point and method are separate
+client-side query inputs. Seven-parameter Helmert conversion is approximate,
+not survey/navigation-grade. No geocoding, route midpoint or offshore-cell
+substitution. Unverified, inconsistent, out-of-range and unsupported coordinates
+remain blocked. Conversion and copying do not fetch environmental evidence or
+authorize work. Copernicus coastal/ocean-cell suitability checks remain separate.
+
+Frontend offline tests: 32 passed, 0 failed; production build passed with the
+existing bundle-size advisory. Production dependency audit: zero vulnerabilities
+(development-tool audit warnings remain outside this scoped change). No live
+OpenAI/Copernicus/weather requests. Served static assets are rebuilt; refresh
+loads the updated controls without restarting the backend or losing its analysis.
+
+## 2026-10-12 — Narrow Water spatial-contract correction (offline)
+
+Inspected historical run 35a615c8e3eb4d5db26594228211cdf2, source SHA256
+172291571418bd927fe904f9b8e924c8bb9903ccf82a37f083dd68d3f0d1c82a.
+Its manifest records simple-permit-v1.2-environment. The exact IGR pair is present
+in input.txt, but schema.json, the raw response and analysis.json have no
+spatial_context field. This is an old-runtime/schema omission, not an API or
+frontend field-dropping bug. The newer v1.3 schema also lacked easting/northing.
+
+Version v1.4 adds nullable original grid values, physical source_page and a
+controlled geometry enum to the same one-request contract. Prompt explicitly
+includes non-condition particulars and preserves multiple locations. IGR may
+be labelled Irish Grid Reference only with explicit source evidence. Local
+verification checks E/N suffix values and source page; no CRS conversion or
+geocoding occurs. Only verified explicit WGS84 coordinates remain eligible for
+the environmental query-point copy action. Validity and operating timing stay
+separate. Original saved runs and raw responses are unchanged.
+
+Offline Narrow Water fixture exercises strict SDK-response parsing, backend
+validation, persistence and the actual /api/analyze response consumed by the
+React Environmental view. A changed Easting fails source verification without
+discarding the evidence. Full pytest: 198 passed, 0 failed, 1 existing
+Starlette/httpx deprecation warning, 18.67 seconds. No live OpenAI or environmental
+requests. Existing live process/result was not restarted or re-analyzed; a
+normal backend restart is needed to load this source version for future uploads.
+
+## 2026-10-12 — Permit-defined location/time cards
+
+Scoped UX extension, not a new extraction architecture. Added source-backed
+spatial/temporal fields to the existing ONE request and compact cards before the
+environmental request form. Reused summary/geofence fallbacks for older results.
+WGS84 explicit verified points copy only on click; other CRS values and routes
+remain display-only. Validity never becomes operations silently. Date-only or
+timezone-unspecified dates do not receive inferred UTC times. Copy actions do
+not fetch data; all existing provider/evidence/review safeguards remain intact.
+
+Offline backend suite passed 196 tests (0 failed, 44.72 s); frontend suite passed
+28 tests (0 failed, 26.46 s). Production build passed, with the existing bundle
+size advisory. Browser mock upload/source
+cards/point copy passed, zero browser errors. The live server/current result was
+left untouched; future extraction schema needs a normal backend restart, not
+automatic re-analysis. No live calls, review changes, new credentials or changes
+to historical outputs. Detailed verification and limitations are documented in
+SIMPLE_ENVIRONMENTAL_INTELLIGENCE.md.
+
+## 2026-10-12 — Simple React Environmental Intelligence, offline delivery
+
+Extended the ONE strict OpenAI response with source-linked environmental
+requirements, without another LLM stage or budget changes. Added a 120-name
+catalogue, deterministic router, unit/compatibility checks, bounded Copernicus
+Toolbox and Open-Meteo ECMWF/ERA5 adapters, session-isolated evidence cache and
+explicit Fetch endpoint. Added the Environmental Intelligence tab while
+preserving Permit Intelligence's four charts and geofences. Manual point/time
+is required; complex areas require point-only confirmation or sampling review.
+No approval, executable rule or work authorization is created.
+
+Full backend suite: 192 passed, 0 failed (14.60 s). Frontend: 20 passed, 0 failed
+(8.69 s). Production build passed (8.01 s), with bundle-size advisory. Actual
+mock browser upload, four-chart display, source drilldown, synthetic evidence
+fetch, tab switching, New Analysis and restart isolation passed. Mobile 390 px
+had no page overflow; zero browser error logs. Fixed a browser-observed native
+datetime-input commit issue and added its UTC-payload regression test.
+
+No live external calls or credential changes. Historical reviews/responses
+preserved. Salinity, visibility, ERA5 waves, direct CDS/CAMS, derived indicators
+and route sampling remain unsupported. Copernicus coastal representativeness
+remains review-gated. Live extraction/provider access still requires separate
+authorization. Complete results, changed files, screenshots and exact controlled
+provider-test instructions: SIMPLE_ENVIRONMENTAL_INTELLIGENCE.md.
+
 ## 2026-10-12 — Focused geofence enhancement to the single-pass React workflow
 
 Added a strict `geofences` array to the existing one-request schema and prompt.
@@ -458,3 +592,153 @@ classification and explicit unresolved condition IDs. A deterministic
 condition-accountability artifact makes every numbered clause visible even if
 the model returns no atomic requirement. Focused tests passed 22 tests; full
 offline suite passed 93 tests. No live OpenAI call was made.
+
+### 2026-10-12 — Focused environmental evidence sampling and deduplication
+
+Added source-backed explicit metric depth handling, outward provider-timestep UTC
+queries with unchanged actual-bracketing/freshness/coastal gates, documented ECMWF
+HRES preference and conservative model-specific nearest-cell distance screening,
+and per-fetch shared evidence with independent threshold evaluations. Preserved
+FNU/NTU incompatibility, existing oxygen conversion, failed requirements, all
+original analyses/licences, extraction prompts and human review gates. A narrowly
+matched non-equivalence caveat no longer misroutes modelled O2 to local sensors;
+actual in-situ obligations still route externally. Satellite observations are not
+mislabelled as model forecasts for unspecified evidence requirements.
+
+Created a separate clearly labelled synthetic fixture/PDF with >25 FNU, <6 mg/L
+at 1 m below sea surface, waves, wind, gust, currents and two SST checks. No real
+permit or historical unofficial upload was edited. Offline SST tests prove one
+fetch, two checks and one card; source entries remain distinct. Depth round-trip
+test covers one mocked extraction, persistence, API and environmental routing.
+Final full backend: 253 passed (one existing warning); frontend: 44 passed.
+Production build passed; PDF visually checked. No live provider/OpenAI calls.
+Restart of FastAPI PID 39260 / port 8531 and browser refresh are required before
+manual live acceptance; no automatic restart or fetch was performed.
+Full rationale, changed files, provider limitations and restart instructions:
+`docs/ENVIRONMENTAL_EVIDENCE_IMPROVEMENTS.md`.
+
+## 2026-10-12 — Minimal environmental qualification and screening correction
+
+Separated retrieval, temporal coverage, configured distance, applicability and
+literal threshold screening. Coastal review alone no longer suppresses valid
+numeric screening; real source/unit/depth/time/distance/value failures still
+block. Kept coastal warnings, all approval gates and legacy enum compatibility.
+Added narrow verified-source SST range recovery with explicit derivation audit,
+two checks sharing one retrieval/card, and safe Celsius spelling aliases.
+ECMWF explicitly requests nearest cells, persists that policy and isolates old
+default-selection caches. Existing HRES 9/sqrt(2) bound remains unchanged and is
+labelled approximate, not exact O1280 geometry. UI shows actual blockers and
+separates displayed-point from any-point series screening.
+
+Saved live evidence was evaluated read-only at its retrieval timestamp: marine
+temporal/distance checks pass; SST checks both false; current trigger false;
+wave displayed trigger false but later points trigger; saved wind remains
+spatially insufficient. No new provider or AI requests and no historical
+artifacts/reviews modified. Full backend 273 passed (one existing warning),
+frontend 49 passed; production build passed (existing bundle advisory).
+No automatic restart: restart FastAPI/Uvicorn on 8531 and hard-refresh before
+manual live fetch. Full decision tree, files and limitations are recorded in
+`docs/ENVIRONMENTAL_QUALIFICATION_FIXES.md`.
+
+## 2026-10-12 — Oxygen-only end-to-end investigation
+
+Latest LIVE run 63e6d528640740eea17c71d3ed7dcf37 uses a nine-page unofficial
+test PDF whose synthetic conditions 23–31 omit oxygen. Confirmed absence in
+every PDF page's text, parsed input, raw AI environmental requirements and
+normalized mapping, plus visual inspection of physical page 8. The separate
+standalone synthetic fixture contains T2 oxygen; it was not this uploaded PDF.
+No production fix or invented requirement is appropriate. Historical artifacts
+and UI were left unchanged. Added nine oxygen-focused offline tests proving
+source-backed extraction/persistence/API, 1 m depth, configured o2 dataset,
+3-D daily Toolbox selection, existing unit conversion, coastal/supportive
+qualification, absent-source safety and visible provider failure diagnostics.
+Full backend suite: 282 passed, one existing Starlette/httpx warning. No live
+requests or executable rules. No restart needed; use oxygen-bearing source in
+a future separately authorized analysis. Full trace and expected mock API shape:
+`docs/OXYGEN_PATH_DIAGNOSIS.md`.
+
+## 2026-10-12 — Focused turbidity manual FNU and air-temperature mapping
+
+Added separate strictly finite positive user-supplied FNU input for original
+NTU turbidity only, retaining source NTU values and separate screening audit
+records. No NTU/FNU conversion or automatic fetch. Explicit Fetch applies the
+manual threshold and reuses fresh cached evidence. Updated only related UI.
+
+Saved condition 29 was source-verified but used unsupported alias
+air_temperature_2m with two limits only in text. Missing catalog alias caused
+UNAVAILABLE routing and pre-dispatch skip, not provider or frontend loss.
+Added aliases to existing air_temperature -> ECMWF temperature_2m mapping;
+reused narrow verified-source two-check temperature recovery without rewriting
+raw output. One retrieval/card, two checks; informational and safety gates stay.
+Focused tests 21 passed; final full backend 303 passed (one existing warning),
+frontend 55 passed; production build passed (existing bundle advisory).
+No live external requests, historical edits, rules or approvals. Backend restart
+on 8531 plus browser hard refresh needed; bundle already rebuilt. Full trace,
+manual provenance and limitations: `docs/TURBIDITY_AIR_TEMPERATURE_FIXES.md`.
+Environmental P0 completion pass: added exact dissolved-oxygen aliases, explicit requested/selected depth and conservative vertical-level tolerance metadata, raw-unit/conversion provenance, shared current-vector projection for eastward U/northward V/speed/direction, explicit visibility routing with metre-unit refusal, hourly precipitation accumulation semantics, wave-direction provider-convention metadata, and the backend/frontend capability catalogue. Sea-surface height remains explicitly unavailable because no verified dataset/variable/datum mapping exists in the local catalogue. No live provider or OpenAI calls were made; historical permit/review data was not changed.
+
+Offline verification note: changed Python modules pass AST parsing and routing/capability smoke checks. Full pytest collection was blocked in the available interpreter because project dependencies (`jsonschema`, `numpy`, and related packages) are not installed; frontend Vitest/build were blocked by OneDrive `EPERM` realpath restrictions. No provider or OpenAI request was attempted.
+
+## 2026-10-12 — Current-speed historical-mode false positive
+
+Diagnosed the surface-current result that had successful Copernicus retrieval,
+covered UTC period and acceptable grid distance but displayed `Historical evidence
+required`. The persisted request for condition 29 was labelled `reanalysis` while
+the verified product returned `MODEL_FORECAST`; `compatible_points()` therefore
+added that exact failure at the historical compatibility branch. The requested
+interval was future/current at evidence retrieval time, so this was a
+provider-mode/temporal classification mismatch, not a retrieval, timezone or
+spatial failure.
+
+The compatibility check now applies the historical safeguard only when the whole
+requested interval ended before the evidence retrieval timestamp. It preserves
+`Historical evidence required` for genuinely historical intervals, keeps all
+timestamps timezone-aware UTC, and allows future/current forecast points to reach
+threshold screening. Added focused offline regression coverage for current/future
+forecast-labelled reanalysis metadata, genuine historical rejection and naive
+evaluation-clock rejection. No live provider/OpenAI request or permit/review data
+change was made.
+
+## 2026-10-12 — P0 output headroom correction
+
+The v1.5 FULL P0 permit response reached the configured 12,000-token ceiling
+and OpenAI returned `finish_reason=length`; parsing, source verification and the
+environmental completeness audit correctly did not run. Using the existing
+gpt-4.1-mini pricing ($0.40/M input and $1.60/M output), a 7,754-token input plus
+a 16,000-token output reservation is approximately $0.0287016, below the
+existing $0.15 hard cap. Raised only the single permit-analysis output ceiling
+to 16,000 via `OUTPUT_TOKEN_CEILING`; the single request, strict parsing,
+fail-stop and budget guard remain unchanged. No live calls, batching, retries,
+provider changes or semantic extraction changes were made.
+
+## 2026-10-12 — Environmental source-candidate semantic boundary
+
+Refined deterministic environmental source discovery from an any-keyword rule
+to a measurement/evidence subject plus evidence-obligation semantics. AIS/GNSS,
+provider names, forecast/reanalysis, fetch configuration and units are no longer
+sufficient by themselves. Workflow-only fetch location/time clauses and
+evidence reuse/deduplication clauses are excluded, while derived measurements
+such as current direction remain eligible when explicitly recorded as evidence.
+The FULL P0 fixture now yields exactly conditions 24–41 (18 candidates), excluding
+11, 12, 23 and 42. Added regression coverage for thresholdless direction and
+availability requirements, manual NTU/FNU handling, sampling/survey evidence,
+provider-only wording and process-only clauses. No prompt, model schema,
+normalization, provider, UI, output ceiling or completeness behavior changed.
+
+## 2026-10-12 — P0 environmental extraction completeness gate
+
+Added a deterministic, source-backed completeness audit to the existing single
+OpenAI extraction response. The prompt now requires one environmental record for
+every explicit environmental source condition, including informational,
+direction/vector, derived, unsupported/unavailable, manual-evidence and
+thresholdless conditions, while requiring the physical page containing each
+quotation. Local preprocessing identifies numbered environmental source clauses
+from the already supplied PDF text; it does not invent variables, thresholds,
+providers or evidence values. Missing model representation is persisted as an
+`EXTRACTION_INCOMPLETE` diagnostic with condition identity, exact source text,
+physical page and source span. Representation completeness is kept separate from
+quote/source verification, so a wrong-page citation remains a verification
+failure rather than being silently repaired. Added the full P0 18-condition
+fixture tests for omission, unsupported/manual conditions, diagnostic shape and
+duplicate accounting. No live calls, provider changes, alias changes, UI changes,
+or historical artifacts were made.

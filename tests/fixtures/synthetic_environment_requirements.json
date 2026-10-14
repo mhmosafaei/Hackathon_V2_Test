@@ -1,0 +1,13 @@
+{
+  "label": "UNOFFICIAL - SOFTWARE TEST - NOT ISSUED BY DAERA - NOT FOR REGULATORY OR OPERATIONAL USE",
+  "conditions": [
+    {"id":"T1","variable":"turbidity","operator":">","threshold":25,"unit":"FNU","depth":null,"text":"For this software test, Copernicus Marine retrieved turbidity greater than 25 FNU shall be flagged for review. This is a synthetic PermitPulse test threshold and must not be interpreted as an authorised regulatory turbidity limit."},
+    {"id":"T2","variable":"dissolved_oxygen","operator":"<","threshold":6.0,"unit":"mg/L","depth":"1 metre below sea surface","text":"For this software test, modelled dissolved oxygen at 1 metre below sea surface shall be reviewed. A value below 6.0 mg/L shall be flagged for review. Copernicus modelled dissolved oxygen is supportive environmental evidence and is not equivalent to required in-situ monitoring."},
+    {"id":"T3","variable":"significant_wave_height","operator":">","threshold":1.5,"unit":"m","depth":null,"text":"For this software test, significant wave height greater than 1.5 m shall be flagged for review."},
+    {"id":"T4","variable":"wind_speed_10m","operator":">","threshold":12,"unit":"m/s","depth":null,"text":"For this software test, 10 m wind speed greater than 12 m/s shall be flagged for review."},
+    {"id":"T5","variable":"wind_gust","operator":">","threshold":18,"unit":"m/s","depth":null,"text":"For this software test, 10 m wind gust greater than 18 m/s shall be flagged for review."},
+    {"id":"T6","variable":"surface_current_speed","operator":">","threshold":1.0,"unit":"m/s","depth":null,"text":"For this software test, surface current speed greater than 1.0 m/s shall be flagged for review."},
+    {"id":"T7","variable":"sea_surface_temperature","operator":"<","threshold":2,"unit":"C","depth":null,"text":"For this software test, sea-surface temperature below 2 C OR above 22 C shall be flagged for review."},
+    {"id":"T7","variable":"sea_surface_temperature","operator":">","threshold":22,"unit":"C","depth":null,"text":"For this software test, sea-surface temperature below 2 C OR above 22 C shall be flagged for review."}
+  ]
+}

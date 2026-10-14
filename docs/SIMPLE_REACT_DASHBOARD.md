@@ -1,5 +1,15 @@
 # Simple AI extraction + React dashboard
 
+## Environmental Intelligence (2026-10-12)
+
+The existing single strict extraction now returns environmental requirements.
+A separate React tab routes them locally and fetches evidence only on explicit
+user action. Permit Intelligence retains exactly four charts and its existing
+review safeguards. Offline verification: 192 backend tests and 20 frontend
+tests passed; mock browser upload/fetch/reset/mobile checks passed. No live calls.
+See [full delivery report and live-test instructions](SIMPLE_ENVIRONMENTAL_INTELLIGENCE.md)
+for supported variables, explicit unsupported priorities and coastal-data gating.
+
 ## Geofence enhancement (2026-10-12)
 
 The same single extraction request now also returns `geofences[]`: name,

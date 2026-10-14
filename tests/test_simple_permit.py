@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 import pymupdf
 import pytest
 
-from src.permit.simple_analysis import analyze, response_schema, parse_response, PROMPT
+from src.permit.simple_analysis import (ExtractionIncompleteError, analyze, response_schema, parse_response, PROMPT,
+                                        reconcile_source_attribution, source_spans_verified)
 from src.permit.simple_api import create_app
 from src.permit.simple_fixture import mock_request
 from src.documents.extractor import CandidateResponseError
@@ -40,12 +41,16 @@ def test_simple_extraction_one_call_and_history_unchanged(tmp_path, monkeypatch)
     result = analyze(pdf_bytes(), 'synthetic.pdf', tmp_path, transport=transport)
     assert len(calls) == 1 and len(calls[0]['pages']) == 6
     assert all(f'--- PAGE {i} ---' in calls[0]['text'] for i in range(1, 7))
+    assert 'AUTHORITATIVE ENVIRONMENTAL CANDIDATES' in calls[0]['text']
     assert len(result['conditions']) == 22
     assert result['executable_rules'] == 0
     assert all(c['review_state'] == 'UNREVIEWED' and not c['executable'] for c in result['conditions'])
     assert (history / 'review.json').read_text() == 'historical decisions'
     assert len(list((tmp_path / 'cache/simple_analysis').glob('*/*/analysis.json'))) == 1
     assert all('candidate' not in f.name for f in (tmp_path / 'cache/simple_analysis').rglob('*'))
+    manifest = json.loads(next((tmp_path / 'cache/simple_analysis').glob('*/*/manifest.json')).read_text())
+    assert manifest['status'] == 'COMPLETE'
+    assert manifest['missing_conditions'] == []
 
 
 def test_parse_strict_schema_and_completion():
@@ -89,6 +94,29 @@ def test_missing_sources_visible_and_quotes_not_promoted(tmp_path):
     result = analyze(pdf_bytes(), 'synthetic.pdf', tmp_path, transport=transport)
     assert not result['conditions'][0]['source_verified']
     assert any('condition 1 ' in w for w in result['warnings'])
+
+
+def test_environmental_incompleteness_fails_closed_and_preserves_audit(tmp_path, monkeypatch):
+    import src.permit.simple_analysis as service
+    monkeypatch.setattr(service, 'identify_environmental_source_candidates', lambda pages: [{
+        'source_record_id': 'environmental-p1-99', 'condition_id': '99', 'source_page': 1,
+        'source_location': 'PDF page 1, condition 99', 'source_text': '99. Wave evidence shall be reviewed.',
+        'source_spans': [{'page': 1, 'quotation': '99. Wave evidence shall be reviewed.'}],
+    }])
+    calls = []
+    def transport(packet):
+        calls.append(packet)
+        return mock_request(packet)
+    with pytest.raises(ExtractionIncompleteError):
+        analyze(pdf_bytes(), 'synthetic.pdf', tmp_path, transport=transport)
+    folder = next((tmp_path / 'cache/simple_analysis').glob('*/*'))
+    manifest = json.loads((folder / 'manifest.json').read_text())
+    payload = json.loads((folder / 'analysis.json').read_text())
+    assert len(calls) == 1
+    assert manifest['status'] == 'EXTRACTION_INCOMPLETE'
+    assert manifest['environmental_extraction_complete'] is False
+    assert payload['environmental_extraction']['missing_conditions'] == ['99']
+    assert (folder / 'response.json').exists()
 
 
 def test_single_pass_rejects_unsafe_input_and_preserves_failures(tmp_path):
@@ -137,10 +165,11 @@ def test_live_adapter_mocked_sdk_one_strict_call_and_budget(tmp_path, monkeypatc
     result = analyze(pdf_bytes(), 'test.pdf', tmp_path)
     assert len(calls) == 1 and len(result['conditions']) == 22
     assert calls[0]['response_format']['json_schema']['strict'] is True
-    assert calls[0]['max_completion_tokens'] == 12000
+    assert calls[0]['max_completion_tokens'] == 16000
     assert 'temperature' not in calls[0]
     assert calls[0]['messages'][0]['content'] == PROMPT
     assert '--- PAGE 6 ---' in calls[0]['messages'][1]['content']
+    assert 'AUTHORITATIVE ENVIRONMENTAL CANDIDATES' in calls[0]['messages'][1]['content']
     ledger = json.loads(next((tmp_path/'cache/simple_analysis').glob('*/*/dispatch_ledger.json')).read_text())
     assert ledger['request_cap'] == 5 and ledger['budget_cap_usd'] == .15
     assert len(ledger['dispatches']) == 1 and ledger['dispatches'][0]['status'] == 'SUCCEEDED'
@@ -220,6 +249,49 @@ def test_location_only_mock_has_no_geofences_and_prompt_prohibits_inference():
     assert result['geofences'] == []
     assert 'mere location mention' in PROMPT
     assert 'Do not infer coordinates' in PROMPT
+
+
+def test_unique_source_quote_page_is_reconciled_with_original_attribution_retained():
+    record = {'source_page': 5, 'source_spans': [{'page': 5, 'quotation': 'Wind speed greater than 12 m/s.'}]}
+    reconcile_source_attribution(record, {4: 'Wind speed greater than 12 m/s.', 5: 'Other page text'})
+    assert record['source_page'] == 4
+    assert record['model_declared_source_page'] == 5
+    assert record['reconciled_source_page'] == 4
+    assert record['source_spans'][0]['page'] == 4
+    assert record['source_spans'][0]['model_declared_page'] == 5
+    assert record['source_spans'][0]['reconciled_physical_page'] == 4
+    assert record['source_reconciliation']['status'] == 'UNIQUE_EXACT_MATCH'
+    assert source_spans_verified(record['source_spans'], {4: 'wind speed greater than 12 m/s.', 5: 'other page text'})
+
+
+def test_source_quote_without_unique_page_remains_unresolved():
+    absent = {'source_page': 5, 'source_spans': [{'page': 5, 'quotation': 'Absent quote'}]}
+    reconcile_source_attribution(absent, {4: 'Different text', 5: 'Other text'})
+    assert absent['source_page'] == 5 and absent['source_spans'][0]['page'] == 5
+    assert absent['source_reconciliation']['status'] == 'UNRESOLVED_NO_UNIQUE_MATCH'
+    duplicate = {'source_page': 5, 'source_spans': [{'page': 5, 'quotation': 'Repeated quote'}]}
+    reconcile_source_attribution(duplicate, {4: 'Repeated quote', 5: 'Repeated quote'})
+    assert duplicate['source_page'] == 5 and duplicate['source_spans'][0]['page'] == 5
+    assert duplicate['source_reconciliation']['status'] == 'UNRESOLVED_NO_UNIQUE_MATCH'
+
+
+def test_correct_source_page_is_unchanged_without_reconciliation():
+    record = {'source_page': 4, 'source_spans': [{'page': 4, 'quotation': 'Correct quote'}]}
+    reconcile_source_attribution(record, {4: 'Correct quote', 5: 'Other text'})
+    assert record['source_page'] == 4 and record['source_spans'][0] == {'page': 4, 'quotation': 'Correct quote'}
+    assert 'source_reconciliation' not in record
+
+
+def test_correctly_attributed_page_records_remain_unchanged_for_multiple_requirements():
+    records = [
+        {'source_page': 5, 'source_spans': [{'page': 5, 'quotation': 'Wind direction.'}]},
+        {'source_page': 5, 'source_spans': [{'page': 5, 'quotation': 'Wind gust.'}]},
+        {'source_page': 5, 'source_spans': [{'page': 5, 'quotation': 'Air temperature.'}]},
+    ]
+    for record in records:
+        original = deepcopy(record)
+        reconcile_source_attribution(record, {4: 'Other page', 5: 'Wind direction. Wind gust. Air temperature.'})
+        assert record == original
 
 
 def test_geofence_boundary_not_in_source_remains_unverified(tmp_path):

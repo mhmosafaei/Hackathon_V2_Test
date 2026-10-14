@@ -28,6 +28,12 @@ async function upload() {
   return user;
 }
 describe('simple session dashboard', () => {
+  it('displays the supplied PermitPulse branding in the dashboard header',()=>{
+    network();render(<App/>);
+    const wordmark=screen.getByRole('img',{name:'PermitPulse'});
+    expect(wordmark).toHaveAttribute('src',expect.stringContaining('permitpulse-wordmark.png'));
+    expect(document.querySelector('.brand-symbol')).toHaveAttribute('src',expect.stringContaining('permitpulse-logo.png'));
+  });
   it('starts empty and never restores a previous analysis', async () => {
     localStorage.setItem('lastAnalysis', JSON.stringify(fixture())); const fetch = network(); render(<App/>);
     expect(screen.getByText('No permit analyzed yet. Upload a permit to begin.')).toBeVisible();
