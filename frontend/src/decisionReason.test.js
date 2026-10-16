@@ -19,11 +19,24 @@ test('unknown names retain the generic STOP fallback and hide IDs',()=>{
   expect(decisionExplanation(stop([trigger(null,{effective_rule:{variable:'environmental_requirement-0-private'}})])))
     .toBe('One or more reviewed operational constraints are triggered.');
 });
-test.each(['WORK','UNKNOWN'])('%s text is unchanged and input is not mutated',status=>{
+test.each(['WORK'])('%s text is unchanged and input is not mutated',status=>{
   const value={status,explanation:'Original advisory explanation',rule_results:[trigger('wind_gust')]};
   const original=JSON.stringify(value);
   expect(decisionExplanation(value)).toBe(value.explanation);
   expect(JSON.stringify(value)).toBe(original);
+});
+
+test('UNKNOWN names and categorizes only blocking rules with stable deduplication',()=>{
+  const missing=(variable,reason_code)=>({...trigger(variable),status:'UNKNOWN',reason_code});
+  const rules=[missing('surface_current_speed','EVIDENCE_MISSING'),missing('dissolved_oxygen','STALE_OXYGEN_EVIDENCE'),
+    missing('significant_wave_height','TEMPORAL_COVERAGE_INSUFFICIENT'),missing('surface_current_speed','EVIDENCE_MISSING'),
+    {...missing('turbidity','STALE_TURBIDITY_EVIDENCE'),gating:false}];
+  const result={status:'UNKNOWN',rule_results:rules};
+  const text=decisionExplanation(result);
+  expect(text).toBe('Insufficient evidence: Dissolved oxygen data is stale; Significant wave height does not cover this interval; Surface current speed data is unavailable.');
+  expect(decisionExplanation({...result,rule_results:[...rules].reverse()})).toBe(text);
+  expect(text).not.toMatch(/Turbidity|environmental_requirement/);
+  expect(decisionExplanation({status:'UNKNOWN'})).toBe('Insufficient evidence for one or more required operational constraints.');
 });
 test('reviewed variable title fallback and component capitalization',()=>{
   const value=stop([trigger(null,{effective_rule:{variable:'eastward current component u'}})]);

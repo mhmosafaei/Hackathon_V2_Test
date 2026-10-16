@@ -31,7 +31,7 @@ never become midpoints. Multiple locations require selection. Validity is clearl
 distinguished from operations. Use dates copies only source-verified explicit UTC
 times; date-only source values stay display-only, without invented midnight or
 timezone. The user can enter planned times manually. Copy actions never fetch;
-Fetch retains its explicit action, 48-hour limit and all evidence safeguards.
+Fetch retains its explicit action, 72-hour maximum fetch limit and all evidence safeguards.
 
 Full offline suites: 196 backend tests passed, 0 failed (44.72 seconds);
 28 frontend tests passed, 0 failed (26.46 seconds). Production build passed.
@@ -105,7 +105,7 @@ with an explanation and insufficient-data status, not fabricated values.
 
 Copernicus reuses existing locally verified product references; fresh official
 catalogue verification remains outstanding. Subsets use ±0.05° around an explicit
-point, <=48 hours, selected variable/depth, a 60-second worker timeout and a 5 MB
+point, <=72 hours, selected variable/depth, a 60-second worker timeout and a 5 MB
 subset estimate limit. Nearest valid ocean cell must be within 5 km. Marine
 quality remains COASTAL_REVIEW_REQUIRED: retrieval alone cannot establish
 harbour representativeness or pass a threshold comparison. No alternative

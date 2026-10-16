@@ -8,6 +8,65 @@ const analysis={analysis_id:'fixture-run',document_sha256:'fixture-hash',filenam
 const rule={requirement_id:'env-0',condition_id:'source-a',gating:true,status:'UNKNOWN',reason_code:'EVIDENCE_MISSING',explanation:'Environmental Fetch required',effective_rule:{variable:'Source-backed variable',operator:'>',threshold:2,unit:'m'},source_spans:[{page:1,quotation:'Exact source clause'}],checks:[],evidence_references:[]};
 const interval={start:'2026-10-14T00:00:00Z',end:'2026-10-14T01:00:00Z',status:'UNKNOWN',explanation:'Evidence missing for interval',primary_reason:'EVIDENCE_MISSING',passed_count:0,stop_count:0,unknown_count:1,evidence_gap_count:1,rule_results:[rule]};
 const payload={assessment_id:'offline-assessment',current_assessment:interval,timeline:[interval],candidate_windows:[],evidence_gaps:[rule],audit:{horizon_hours:72,duration_hours:4,assessed_at:'2026-10-14T00:00:00Z',interval_semantics:'Native intervals'},disclaimer:'Advisory assessment; no operational authorization.'};
+test.each([24,48,72])('%ih horizon posts and restores from session on reopen',async horizon=>{
+  const response={...payload,audit:{...payload.audit,horizon_hours:horizon,analysis_run_id:analysis.analysis_id,document_sha256:analysis.document_sha256}};
+  const fetch=vi.fn().mockResolvedValue({ok:true,json:async()=>response});vi.stubGlobal('fetch',fetch);
+  const view=render(<DecisionWorkWindows analysis={analysis} session={{boot_id:'boot'}}/>);
+  fireEvent.change(screen.getByLabelText('Timeline horizon'),{target:{value:String(horizon)}});
+  fireEvent.click(screen.getByText('Evaluate existing evidence'));
+  await screen.findByText(`${horizon}-hour decision timeline`);
+  expect(JSON.parse(fetch.mock.calls[0][1].body).horizon_hours).toBe(horizon);
+  expect(screen.getByLabelText('Timeline horizon')).toHaveValue(String(horizon));
+  view.unmount();
+  render(<DecisionWorkWindows analysis={analysis} session={{boot_id:'boot',decision_result:response}}/>);
+  expect(screen.getByLabelText('Timeline horizon')).toHaveValue(String(horizon));
+  expect(screen.getByText(`${horizon}-hour decision timeline`)).toBeTruthy();
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+test('specific UNKNOWN reason is consistent across current selected interval and actions; excluded turbidity is separate',async()=>{
+  const oxygen={...rule,effective_rule:{canonical_variable:'dissolved_oxygen'},reason_code:'STALE_OXYGEN_EVIDENCE'};
+  const turbidity={...rule,requirement_id:'environmental_requirement-1-private',gating:false,
+    effective_rule:{canonical_variable:'turbidity'},availability_policy:'AVAILABLE_EVIDENCE_ONLY_MVP',
+    explanation:'Turbidity evidence stale — excluded from MVP work-window decision for this interval.'};
+  const cell={...interval,rule_results:[oxygen,turbidity]};
+  await show({...payload,current_assessment:cell,timeline:[cell],evidence_gaps:[oxygen]});
+  const text='Insufficient evidence: Dissolved oxygen data is stale.';
+  for(const title of ['Current operational decision','Selected window details','Interval details','Missing evidence & required actions'])
+    expect(within(screen.getByText(title).closest('section')).getByText(text)).toBeTruthy();
+  expect(within(screen.getByText('Evidence excluded under MVP availability policy').closest('section')).getByText(turbidity.explanation)).toBeTruthy();
+  expect(screen.queryByText('environmental_requirement-1-private')).toBeNull();
+});
+test('late session result and successful response synchronize controls to actual audit without auto evaluation',async()=>{
+  const returned={...payload,audit:{...payload.audit,analysis_run_id:analysis.analysis_id,document_sha256:analysis.document_sha256,horizon_hours:24,duration_hours:6,ranking:'longest',include_conditional:true,requested_start:'2026-10-13T05:00:00Z'}};
+  const fetch=vi.fn().mockResolvedValue({ok:true,json:async()=>returned});vi.stubGlobal('fetch',fetch);
+  const accepted=vi.fn();
+  const view=render(<DecisionWorkWindows analysis={analysis} session={{boot_id:'boot'}} onEvaluated={accepted}/>);
+  view.rerender(<DecisionWorkWindows analysis={analysis} session={{boot_id:'boot',decision_result:{...returned,audit:{...returned.audit,horizon_hours:72,duration_hours:2,requested_start:null}}}} onEvaluated={accepted}/>);
+  expect(screen.getByLabelText('Timeline horizon')).toHaveValue('72');
+  expect(screen.getByLabelText('Required continuous duration')).toHaveValue('2');
+  expect(screen.getByLabelText('Start UTC')).toHaveValue('');
+  expect(fetch).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText('Evaluate existing evidence'));
+  await screen.findByText('24-hour decision timeline');
+  expect(screen.getByLabelText('Timeline horizon')).toHaveValue('24');
+  expect(screen.getByLabelText('Required continuous duration')).toHaveValue('6');
+  expect(screen.getByLabelText('Rank candidates')).toHaveValue('longest');
+  expect(screen.getByLabelText('Start UTC')).toHaveValue('2026-10-13T05:00');
+  expect(screen.getByLabelText('Include conditional windows requiring additional verification')).toBeChecked();
+  expect(accepted).toHaveBeenCalledWith(returned);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+test('stored informational direction values appear in non-gating inspector without Fetch',()=>{
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  const direction={...rule,gating:false,status:'WORK',reason_code:'OUT_OF_SCOPE_FOR_MVP_DECISION',informational_evidence:{status:'INFORMATIONAL',derived:true,points:[{value:90,valid_time:interval.start}],qualification:'Audit only'},evidence_references:[{provider:'COPERNICUS_MARINE',dataset_id:'native-current'}]};
+  const stored={...payload,current_assessment:{...interval,rule_results:[direction]},audit:{...payload.audit,analysis_run_id:analysis.analysis_id,document_sha256:analysis.document_sha256}};
+  render(<DecisionWorkWindows analysis={analysis} session={{decision_result:stored}}/>);
+  expect(screen.getByText(/Derived from Copernicus U\/V/)).toBeTruthy();
+  expect(screen.getByTestId('informational-direction')).toHaveTextContent('90');
+  expect(screen.getByText(/No threshold/)).toBeTruthy();
+  expect(fetch).not.toHaveBeenCalled();
+});
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();localStorage.clear();});
 async function show(result=payload){const mocked=vi.fn().mockResolvedValue({ok:true,json:async()=>result});vi.stubGlobal('fetch',mocked);render(<DecisionWorkWindows analysis={analysis} session={{boot_id:'boot'}}/>);fireEvent.click(screen.getByText('Evaluate existing evidence'));await screen.findByText('72-hour decision timeline');return mocked;}
 
@@ -53,10 +112,10 @@ test('summary STOP rows and selected windows use distinct matching interval trig
   expect(within(screen.getByText('Selected window details').closest('section')).getByText('Triggered constraint: Wind gust')).toBeTruthy();
   expect(JSON.stringify(value)).toBe(before);
 });
-test.each(['WORK','STOP','UNKNOWN'])('renders %s assessment explanation and actual UTC interval',async state=>{await show({...payload,current_assessment:{...interval,status:state}});expect(screen.getAllByText(state).length).toBeGreaterThan(0);expect(screen.getAllByText('Evidence missing for interval').length).toBeGreaterThan(0);expect(screen.getByRole('button',{name:/UNKNOWN 2026-10-14T00:00:00Z/})).toBeTruthy();expect(screen.getByText(/No regulatory approval, legal compliance/)).toBeTruthy();expect(screen.queryByText(/ILLUSTRATIVE|Belfast/)).toBeNull();});
+test.each(['WORK','STOP','UNKNOWN'])('renders %s assessment explanation and actual UTC interval',async state=>{await show({...payload,current_assessment:{...interval,status:state}});expect(screen.getAllByText(state).length).toBeGreaterThan(0);expect(screen.getAllByText(state === 'WORK' ? 'Evidence missing for interval' : state === 'STOP' ? 'One or more reviewed operational constraints are triggered.' : 'Insufficient evidence: Source-backed variable data is unavailable.').length).toBeGreaterThan(0);expect(screen.getByRole('button',{name:/UNKNOWN 2026-10-14T00:00:00Z/})).toBeTruthy();expect(screen.getByText(/No regulatory approval, legal compliance/)).toBeTruthy();expect(screen.queryByText(/ILLUSTRATIVE|Belfast/)).toBeNull();});
 test('controls apply explicit duration horizon conditional and ranking without provider Fetch',async()=>{const mocked=await show();fireEvent.change(screen.getByLabelText('Required continuous duration'),{target:{value:'6'}});fireEvent.change(screen.getByLabelText('Timeline horizon'),{target:{value:'24'}});fireEvent.click(screen.getByLabelText('Include conditional windows requiring additional verification'));fireEvent.change(screen.getByLabelText('Rank candidates'),{target:{value:'longest'}});fireEvent.click(screen.getByText('Evaluate existing evidence'));expect(JSON.parse(mocked.mock.calls[1][1].body)).toMatchObject({duration_hours:6,horizon_hours:24,include_conditional:true,ranking:'longest'});expect(mocked.mock.calls.every(([url])=>url==='/api/decision/evaluate')).toBe(true);});
 test('timeline selection displays inspector source and missing actions',async()=>{await show();fireEvent.click(screen.getByRole('button',{name:/UNKNOWN 2026-10-14T00:00:00Z/}));expect(screen.getByText('Constraint inspector')).toBeTruthy();expect(screen.getByText('Exact source clause',{exact:false})).toBeTruthy();expect(screen.getAllByText('Environmental Fetch required').length).toBeGreaterThan(0);expect(screen.getByText('Missing evidence & required actions')).toBeTruthy();});
-test('candidate click opens interval details',async()=>{await show({...payload,candidate_windows:[{start:interval.start,end:interval.end,duration_hours:6,type:'CONDITIONAL',status:'UNKNOWN',unknown_count:1}]});fireEvent.click(screen.getByRole('button',{name:/CONDITIONAL \/ UNKNOWN/}));expect(screen.getByText('Additional verification is required.')).toBeTruthy();});
+test('candidate click opens interval details',async()=>{await show({...payload,candidate_windows:[{start:interval.start,end:interval.end,duration_hours:6,type:'CONDITIONAL',status:'UNKNOWN',unknown_count:1}]});fireEvent.click(screen.getByRole('button',{name:/CONDITIONAL \/ UNKNOWN/}));expect(within(screen.getByText('Selected window details').closest('section')).getByText('Insufficient evidence: Source-backed variable data is unavailable.')).toBeTruthy();});
 test('mount never dispatches and errors are visible without retry',async()=>{const mocked=vi.fn().mockResolvedValue({ok:false,json:async()=>({error:'DECISION_INPUT_OR_REVIEW_INVALID'})});vi.stubGlobal('fetch',mocked);render(<DecisionWorkWindows analysis={analysis} session={{boot_id:'boot'}}/>);expect(mocked).not.toHaveBeenCalled();fireEvent.click(screen.getByText('Evaluate existing evidence'));expect(await screen.findByRole('alert')).toHaveTextContent('DECISION_INPUT_OR_REVIEW_INVALID');expect(mocked).toHaveBeenCalledTimes(1);});
 test('unavailable backend gives actionable 404 message without retry',async()=>{const mocked=vi.fn().mockResolvedValue({ok:false,status:404});vi.stubGlobal('fetch',mocked);render(<DecisionWorkWindows analysis={analysis} session={{boot_id:'boot'}}/>);fireEvent.click(screen.getByText('Evaluate existing evidence'));expect(await screen.findByRole('alert')).toHaveTextContent('Restart the backend with the Decision API enabled');expect(mocked).toHaveBeenCalledTimes(1);});
 test('draft controls do not relabel evaluated results',async()=>{await show();fireEvent.change(screen.getByLabelText('Timeline horizon'),{target:{value:'24'}});fireEvent.click(screen.getByRole('button',{name:'2 h'}));expect(screen.getByRole('status')).toHaveTextContent('72-hour horizon / 4-hour minimum duration');expect(screen.getByText('72-hour decision timeline')).toBeTruthy();expect(screen.getByText('Interval details')).toBeTruthy();expect(screen.getByText('Operational assessment')).toBeTruthy();});

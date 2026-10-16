@@ -1,5 +1,9 @@
 import React, {useState, useRef, useEffect} from 'react';
 import PermitContext from './PermitContext.jsx';
+import environmentalLimits from '../../config/environmental_limits.json';
+
+const ENVIRONMENTAL_MAX_FETCH_HOURS = environmentalLimits.max_fetch_hours;
+const utcInput = value => value ? `${value.length === 16 ? `${value}:00` : value}Z` : null;
 
 const label = value => (value || '').replaceAll('_', ' ');
 export const blockerLabel = row => {
@@ -62,18 +66,22 @@ export default function Environmental({analysis, session}) {
     if (loading || !session) return;
     setLoading(true); setError(''); setResult(null);
     try {
+      if (start && end) {
+        const hours=(Date.parse(utcInput(end))-Date.parse(utcInput(start)))/3600000;
+        if (!(hours>0 && hours<=ENVIRONMENTAL_MAX_FETCH_HOURS)) throw new Error('Invalid requested period');
+      }
       const response = await fetch('/api/environmental', {method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-Session-Id': session.boot_id},
         body: JSON.stringify({analysis_id: analysis.analysis_id,
           latitude: latitude === '' ? null : Number(latitude), longitude: longitude === '' ? null : Number(longitude),
-          start_time: start ? `${start}:00Z` : null, end_time: end ? `${end}:00Z` : null,
+          start_time: utcInput(start), end_time: utcInput(end),
           depth: depth === '' ? null : Number(depth), point_scope_confirmed: pointOnly,
           manual_fnu_thresholds:Object.fromEntries(Object.entries(manualFnu).filter(([,value])=>value.trim()!=='' && Number.isFinite(Number(value)) && Number(value)>0).map(([key,value])=>[key,Number(value)]))})});
       if (!response.ok) throw new Error('Request failed');
       const evidence = await response.json();
       if (alive.current) setResult(evidence);
     } catch {
-      if (alive.current) setError('Environmental request could not be completed. Check coordinates and UTC period (maximum 48 hours). No automatic retry.');
+      if (alive.current) setError(`Environmental request could not be completed. Check coordinates and UTC period (maximum ${ENVIRONMENTAL_MAX_FETCH_HOURS} hours). No automatic retry.`);
     } finally {if (alive.current) setLoading(false);}
   }
   if (!analysis) return <div className="empty-state"><h2>Environmental Intelligence</h2><p>Analyze a permit to identify its environmental evidence requirements.</p></div>;

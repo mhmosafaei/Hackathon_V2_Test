@@ -43,6 +43,30 @@ export function intervalRuleResults(assessment, payload) {
 }
 
 export function decisionExplanation(assessment, fallback = '', payload) {
+  if (assessment?.status === 'UNKNOWN') {
+    const issues = new Set();
+    const categories = {
+      EVIDENCE_MISSING:'data is unavailable', NO_WAVE_EVIDENCE:'data is unavailable',
+      EVIDENCE_STALE:'data is stale', STALE_OXYGEN_EVIDENCE:'data is stale', STALE_WAVE_EVIDENCE:'data is stale',
+      TEMPORAL_COVERAGE_INSUFFICIENT:'does not cover this interval', FORECAST_COVERAGE_INSUFFICIENT:'does not cover this interval',
+      SPATIAL_COVERAGE_INSUFFICIENT:'spatial coverage is insufficient', UNIT_INCOMPATIBLE:'unit is incompatible',
+      DEPTH_UNSATISFIED:'depth is incompatible or unresolved', NO_COMPATIBLE_OXYGEN_SOURCE:'compatible source is unavailable',
+      PROVIDER_FAILURE:'provider/source is unavailable', EVIDENCE_UNSUPPORTED:'compatible source is unavailable',
+      TIME_UNRESOLVED:'permit time prerequisite is unresolved', POSITION_UNRESOLVED:'permit position prerequisite is unresolved',
+    };
+    for (const result of intervalRuleResults(assessment, payload)) {
+      if (result?.gating !== true || result.status !== 'UNKNOWN') continue;
+      const title = result.condition_id === 'time' && result.kind === 'decision_prerequisite' ? 'Permit time'
+        : result.condition_id === 'position' && result.kind === 'decision_prerequisite' ? 'Permit position' : triggerTitle(result);
+      if (!title) continue;
+      const code = result.reason_code || '';
+      const category = categories[code] || (code.includes('TIME') ? 'permit time prerequisite is unresolved'
+        : code.includes('POSITION') ? 'permit position prerequisite is unresolved' : 'requires review or compatible evidence');
+      issues.add(`${title} ${category}`);
+    }
+    const ordered = [...issues].sort((a,b)=>a.localeCompare(b,'en'));
+    return ordered.length ? `Insufficient evidence: ${ordered.join('; ')}.` : 'Insufficient evidence for one or more required operational constraints.';
+  }
   if (assessment?.status !== 'STOP') return assessment?.explanation || fallback;
   const names = new Map();
   for (const result of intervalRuleResults(assessment, payload)) {

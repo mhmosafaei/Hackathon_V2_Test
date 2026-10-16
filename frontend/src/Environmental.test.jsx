@@ -18,6 +18,16 @@ const doc = () => ({analysis_id:'fresh', filename:'synthetic-environment.pdf',mo
   summary:{permit_number:'TEST-ENV'},conditions:[],key_limits:[],geofences:[],
   environmental_requirements:[row],environmental_mapping:[row]});
 const session = {boot_id:'boot',mode:'MOCK',provider_status:{COPERNICUS_MARINE:'Credentials required',ECMWF_FORECAST:'Public endpoint configured · connection not tested'}};
+
+it.each([['2026-10-15T00:00',true],['2026-10-16T00:00',true],['2026-10-16T00:01',false],['2026-10-12T00:00',false]])('validates UTC fetch end %s against shared 72-hour maximum',async(end,allowed)=>{
+  const fetch=vi.fn().mockResolvedValue({ok:true,json:async()=>({requirements:[row]})});vi.stubGlobal('fetch',fetch);
+  render(<Environmental session={session} analysis={doc()}/>);
+  fireEvent.change(screen.getByLabelText('Planned start (UTC)'),{target:{value:'2026-10-13T00:00'}});
+  fireEvent.change(screen.getByLabelText('Planned end (UTC)'),{target:{value:end}});
+  await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+  if(allowed){expect(fetch).toHaveBeenCalledTimes(1);expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({start_time:'2026-10-13T00:00:00Z',end_time:`${end}:00Z`});}
+  else{expect(fetch).not.toHaveBeenCalled();expect(screen.getByRole('alert')).toHaveTextContent('72 hours');}
+});
 afterEach(() => {vi.restoreAllMocks();vi.unstubAllGlobals();});
 
 it('displays informational wave convention and derived current direction without Fetch',()=>{

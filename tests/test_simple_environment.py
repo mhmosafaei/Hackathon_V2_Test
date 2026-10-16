@@ -215,7 +215,7 @@ def test_ecmwf_uses_selected_variable_and_era5_is_not_forecast():
 
 def test_empty_requirements_and_bad_times_make_no_provider_calls(tmp_path):
     assert evaluate(analysis(), inputs(),tmp_path,transports={})['requirements']==[]
-    options=inputs().model_dump(); options['end_time']=options['start_time']+timedelta(days=3)
+    options=inputs().model_dump(); options['end_time']=options['start_time']+timedelta(days=3,microseconds=1)
     with pytest.raises(ValueError): EvaluationInput(**options)
 
 

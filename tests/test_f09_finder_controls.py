@@ -8,7 +8,8 @@ from tests.test_decision_engine import fixture, T
 from src.permit.decision_engine import assess, find_windows
 
 
-def test_api_controls_reach_engine_and_session_without_transports(tmp_path,monkeypatch):
+@pytest.mark.parametrize('horizon',[24,48,72])
+def test_api_controls_reach_engine_and_session_without_transports(tmp_path,monkeypatch,horizon):
     from src.permit import simple_api
     from src.permit import decision_engine
     reviews,env=fixture(hours=6)
@@ -30,14 +31,15 @@ def test_api_controls_reach_engine_and_session_without_transports(tmp_path,monke
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
             for start in [T.isoformat(),None]:
                 body={'analysis_run_id':'run','document_sha256':'a'*64,'start':start,
-                    'horizon_hours':24,'duration_hours':6,'ranking':'longest','include_conditional':True}
+                    'horizon_hours':horizon,'duration_hours':6,'ranking':'longest','include_conditional':True}
                 response=await client.post('/api/decision/evaluate',json=body,headers={'x-session-id':app.state.boot_id})
                 assert response.status_code==200
                 result=response.json()
                 assert calls[-1]=={k:v for k,v in body.items() if k not in {'analysis_run_id','document_sha256'}}
                 assert result['audit']['requested_start']==start
                 assert result['audit']['start']==T.isoformat()
-                assert result['audit']['horizon_hours']==24
+                assert result['audit']['horizon_hours']==horizon
+                assert result['timeline'][-1]['end']==(T+timedelta(hours=horizon)).isoformat()
                 assert result['audit']['duration_hours']==6
                 assert result['audit']['ranking']=='longest'
                 assert result['audit']['include_conditional'] is True

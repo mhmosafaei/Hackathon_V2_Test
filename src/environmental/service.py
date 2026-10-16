@@ -249,7 +249,8 @@ def compatible_points(requirement, request, evidence, *, now=None):
     if manual and request.canonical_variable == 'turbidity' and (target_unit or '').upper() == 'NTU':
         threshold = manual['value']; target_unit = 'FNU'
     points = []
-    for raw in evidence.get('points', [])[:200]:
+    from .limits import MAX_EVIDENCE_POINTS
+    for raw in evidence.get('points', [])[:MAX_EVIDENCE_POINTS]:
         notes = list(failures); value = None
         try:
             moment = utc(raw['data_time'])

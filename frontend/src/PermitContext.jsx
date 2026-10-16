@@ -1,4 +1,5 @@
 import React, {useState, useRef} from 'react';
+import environmentalLimits from '../../config/environmental_limits.json';
 
 // No geocoding, timezone guessing or date-only midnight defaults.
 function explicitUtc(value) {
@@ -92,7 +93,7 @@ export default function PermitContext({analysis, session, onLocation, onDates}) 
         {hasOperation && (timing.permit_valid_from || timing.permit_valid_until) && <p>Permit validity: {timing.permit_valid_from || 'Not stated'} → {timing.permit_valid_until || 'Not stated'}</p>}
         {!hasOperation && (start || end) && <p className="context-warning">These are licence validity dates, not confirmed operational dates. Adjust them if the planned activity period is known.</p>}
         {(start || end) && <><button className="button secondary" disabled={!canUseDates} onClick={()=>onDates(utcStart,utcEnd)}>Use dates ↓</button>
-          {!utcStart || !utcEnd ? <p>Explicit UTC times are not provided. Enter planned UTC dates and times below; no midnight or timezone is inferred.</p> : <p>Review the selected period below; retrieval remains limited to 48 hours.</p>}</>}
+          {!utcStart || !utcEnd ? <p>Explicit UTC times are not provided. Enter planned UTC dates and times below; no midnight or timezone is inferred.</p> : <p>Review the selected period below; retrieval remains limited to {environmentalLimits.max_fetch_hours} hours.</p>}</>}
         {!!timing.operation_time_restrictions?.length && <div><h4>Source time restrictions</h4>{timing.operation_time_restrictions.map((r,i)=><p key={i}>{r}</p>)}</div>}
         <Source value={timing}/>
       </article>

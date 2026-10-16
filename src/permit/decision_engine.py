@@ -227,6 +227,21 @@ def evaluate_requirement(row, environment, start, end, now, linked):
     def finish(code, message, status='UNKNOWN'):
         result.update(reason_code=code, explanation=message, status=status,
                       required_action=NEXT_ACTIONS.get(code, 'Inspect the reviewed source and assessment explanation.' if status == 'UNKNOWN' else 'No additional interpretation action for this result.'))
+        # Explicit MVP availability policy, not a passing threshold result.
+        # Review/source/interpretation blockers are deliberately not waived.
+        availability_codes = {'EVIDENCE_MISSING', 'EVIDENCE_STALE', 'EVIDENCE_UNSUPPORTED',
+            'PROVIDER_FAILURE', 'NO_COMPATIBLE_ACCESSIBLE_SOURCE', 'STALE_TURBIDITY_EVIDENCE',
+            'TEMPORAL_COVERAGE_INSUFFICIENT', 'FORECAST_COVERAGE_INSUFFICIENT',
+            'SPATIAL_COVERAGE_INSUFFICIENT', 'UNIT_INCOMPATIBLE', 'DEPTH_UNSATISFIED'}
+        if (status == 'UNKNOWN' and result['gating'] and row['kind'] == 'environmental_requirement'
+                and canonical(effective.get('canonical_variable')) == 'turbidity' and code in availability_codes):
+            result['gating'] = False
+            result['availability_policy'] = 'AVAILABLE_EVIDENCE_ONLY_MVP'
+            result['availability_diagnostic'] = message
+            state = 'stale' if code in {'STALE_TURBIDITY_EVIDENCE', 'EVIDENCE_STALE'} else 'unavailable'
+            result['explanation'] = f'Turbidity evidence {state} — excluded from MVP work-window decision for this interval. ' + message
+        from .informational_audit import attach_direction_audit
+        attach_direction_audit(result, row, environment, start, end)
         return result
 
     if row['kind'] == 'decision_prerequisite':
@@ -249,6 +264,11 @@ def evaluate_requirement(row, environment, start, end, now, linked):
                 and row['state'] in {'APPROVED','CORRECTED'} and row['applicability'] == 'APPLICABLE'
                 and not row.get('conflict'))
     if not eligible:
+        if (row['kind'] == 'environmental_requirement' and gating and thresholded and not fetchable
+                and canonical(effective.get('canonical_variable')) == 'turbidity'
+                and row['state'] in {'APPROVED','CORRECTED'} and row['applicability'] == 'APPLICABLE'
+                and not row.get('conflict') and result['source_verified']):
+            return finish('EVIDENCE_UNSUPPORTED', 'No compatible configured turbidity source is available.')
         result['gating'] = False
         return finish('OUT_OF_SCOPE_FOR_MVP_DECISION',
             'Retained for review/audit; not a reviewed applicable fetchable Copernicus/ECMWF numerical constraint. Other legal obligations remain unchanged.', 'WORK')
@@ -549,7 +569,7 @@ def assess(review_data, environmental_result=None, *, start=None, horizon_hours=
     now = utc(now or datetime.now(timezone.utc))
     requested_start = stamp(utc(start)) if start else None
     start = utc(start) if start else now
-    if horizon_hours not in {24,72} or duration_hours not in {2,4,6,12} or ranking not in {'earliest','longest'}:
+    if horizon_hours not in {24,48,72} or duration_hours not in {2,4,6,12} or ranking not in {'earliest','longest'}:
         raise ValueError('INVALID_DECISION_OPTIONS')
     environment = environmental_result if environmental_result and environmental_result.get('analysis_id') == review_data['analysis_run_id'] else None
     rows = deepcopy(review_data['requirements'])

@@ -2,6 +2,7 @@
 from typing import Literal, Annotated
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from .limits import ENVIRONMENTAL_MAX_FETCH_HOURS
 
 Status = Literal['WITHIN_THRESHOLD', 'THRESHOLD_EXCEEDED', 'INSUFFICIENT_DATA',
                  'INFORMATIONAL', 'EXTERNAL_EVIDENCE_REQUIRED']
@@ -28,8 +29,8 @@ class EvaluationInput(BaseModel):
             if self.start_time.utcoffset() is None or self.end_time.utcoffset() is None:
                 raise ValueError('Times must have a UTC offset')
             hours = (self.end_time - self.start_time).total_seconds() / 3600
-            if not 0 < hours <= 48:
-                raise ValueError('Select a positive period of at most 48 hours')
+            if not 0 < hours <= ENVIRONMENTAL_MAX_FETCH_HOURS:
+                raise ValueError(f'Select a positive period of at most {ENVIRONMENTAL_MAX_FETCH_HOURS} hours')
         return self
 
 
