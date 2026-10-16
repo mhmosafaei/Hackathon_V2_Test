@@ -1,8 +1,9 @@
 """Safe provider diagnostics: controlled reasons, never SDK strings or secrets."""
 class ProviderError(RuntimeError):
-    def __init__(self, category, message):
+    def __init__(self, category, message, metadata=None):
         super().__init__(message)
         self.category, self.safe_message = category, message
+        self.metadata = metadata or {}
 
 
 def diagnostic(exc):

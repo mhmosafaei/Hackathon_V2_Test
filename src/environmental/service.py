@@ -11,9 +11,41 @@ from .router import route
 from .catalog import canonical
 from .units import convert, canonical_unit
 from .errors import ProviderError, diagnostic
-from .sampling import MARINE_STEPS, timestep_bounds, source_depth, weather_spatial_limit
+from .sampling import MARINE_STEPS, timestep_bounds, source_depth, weather_spatial_limit, depth_metadata
 
 CURRENT_VARIABLES = {'eastward_current', 'northward_current', 'surface_current_speed', 'surface_current_direction'}
+
+
+def source_numeric_values(text):
+    """Exact numeric tokens, allowing well-formed comma thousands groups only."""
+    tokens = re.findall(r'(?<![\w.,])-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?![\w.,])', text)
+    return [float(token.replace(',', '')) for token in tokens]
+
+
+def canonical_stop_rule(requirement):
+    """Recover only an explicit verified STOP predicate; retain model wording."""
+    if not requirement.get('source_verified') or requirement.get('threshold') is None or not requirement.get('unit'):
+        return requirement
+    text = re.sub(r'\s+', ' ', ' '.join(s.get('quotation') or '' for s in requirement.get('source_spans', [])))
+    operators = {'greater than':'>','above':'>','below':'<','less than':'<',
+                 'greater than or equal to':'>=','less than or equal to':'<='}
+    pattern = (r'\bSTOP\s+(?:condition\s*:|if\s+)[^:;.!?]{0,120}?'
+               r'(greater than or equal to|less than or equal to|greater than|less than|above|below|>=|<=|>|<)\s*'
+               r'(-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s*'+re.escape(requirement['unit'])+r'(?!\w)')
+    matches = {operators.get(m[1].lower(),m[1]) for m in re.finditer(pattern,text,re.I)
+               if float(m[2].replace(',','')) == requirement['threshold']}
+    for expression, op in [(r'\bshall\s+not\s+exceed\s*', '>'), (r'\bshall\s+not\s+be\s+below\s*','<')]:
+        prohibition = expression + r'(-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s*' + re.escape(requirement['unit']) + r'(?!\w)'
+        if any(float(m[1].replace(',',''))==requirement['threshold'] for m in re.finditer(prohibition,text,re.I)):
+            matches.add(op)
+    if len(matches)!=1:
+        if re.search(r'\bSTOP\s+(?:condition\s*:|if\s+)', text, re.I):
+            return {**requirement,'threshold_interpretation_error':'Unique verified STOP predicate could not be established for the extracted threshold/unit.'}
+        return requirement
+    operator=next(iter(matches))
+    return {**requirement,'operator':operator,'threshold_semantics':'SOURCE_STOP_PREDICATE',
+            'extracted_threshold':requirement.get('extracted_threshold') or {k:requirement.get(k) for k in ('operator','threshold','unit')},
+            'stop_rule':{'operator':operator,'threshold':requirement['threshold'],'unit':requirement['unit']}}
 
 
 def precipitation_accumulation_semantics(requirement):
@@ -83,7 +115,7 @@ def map_requirements(analysis):
     allowed_conditions = ({str(condition_id) for condition_id in candidate_conditions}
                           if isinstance(candidate_conditions, list) else None)
     expanded = [(index, item) for index, original in enumerate(analysis.get('environmental_requirements', []))
-                for item in derived_sst_checks(original)]
+                for item in derived_sst_checks(canonical_stop_rule(original))]
     for index, requirement in expanded:
         if allowed_conditions is not None and str(requirement.get('condition_id')) not in allowed_conditions:
             continue
@@ -94,7 +126,7 @@ def map_requirements(analysis):
         classification_text = re.sub(r'\s+', ' ', quotations).strip()
         # A non-equivalence warning is not an instruction to use local sensors.
         # Remove only this explicit negative phrase, leaving actual obligations intact.
-        evidence_text = re.sub(r'not\s+equivalent\s+to(?:\s+required)?\s+in[ -]situ\s+monitoring', '', classification_text, flags=re.I)
+        evidence_text = re.sub(r'(?:shall\s+not\s+be\s+(?:represented|treated)\s+as\s+equivalent\s+to\s+an?\s+in[ -]situ\s+measurement|not\s+equivalent\s+to(?:\s+required)?\s+in[ -]situ\s+monitoring)', '', classification_text, flags=re.I)
         if re.search(r'\bin[ -]situ\b|\blocal sensors?\b|\blaboratory\b|\bmonitoring stations?\b', evidence_text, re.I):
             evidence_type = 'local_sensor'
         routing = route(requirement['canonical_variable'], evidence_type)
@@ -122,6 +154,9 @@ def utc(value):
 
 def compatible_points(requirement, request, evidence, *, now=None):
     """Evaluate every returned point, never claim whole-period coverage from one value."""
+    requirement = canonical_stop_rule(requirement)
+    if requirement.get('stop_rule'):
+        request = request.model_copy(update={'operator':requirement['operator']})
     now = now or datetime.now(timezone.utc)
     # All request and provider timestamps are required to be timezone-aware.  Keep
     # the comparison in UTC so a local-naive clock cannot turn a current/future
@@ -130,7 +165,15 @@ def compatible_points(requirement, request, evidence, *, now=None):
         raise ValueError('Evaluation clock must be timezone-aware')
     now = now.astimezone(timezone.utc)
     precipitation_metadata = precipitation_accumulation_semantics(requirement)
+    from .recency import policy
+    reference_rule = policy(request.canonical_variable, request.depth)
     failures = []
+    if reference_rule:
+        modes = {'SATELLITE_OBSERVATION', 'OBSERVATION'} if request.canonical_variable == 'turbidity' else {'MODEL_FORECAST'}
+        if evidence.get('data_type') not in modes:
+            failures.append('Reference-evidence policy requires compatible observation/model evidence mode')
+    if requirement.get('threshold_interpretation_error'):
+        failures.append(requirement['threshold_interpretation_error'])
     if not requirement.get('source_verified'):
         failures.append('Source quotation/condition link requires verification')
     if evidence.get('provider') != request.provider or not evidence.get('dataset_id'):
@@ -186,8 +229,8 @@ def compatible_points(requirement, request, evidence, *, now=None):
     threshold = requirement.get('threshold')
     if threshold is not None:
         source_text = ' '.join(s['quotation'] for s in requirement.get('source_spans', []))
-        numbers = re.findall(r'(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])', source_text)
-        if not any(float(n) == threshold for n in numbers):
+        numbers = source_numeric_values(source_text)
+        if threshold not in numbers:
             failures.append('Numeric threshold not supported by cited text')
         unit = requirement.get('unit')
         literal_unit_supported = bool(unit and re.search(r'(?<!\w)' + re.escape(unit) + r'(?!\w)', source_text, re.I))
@@ -199,6 +242,10 @@ def compatible_points(requirement, request, evidence, *, now=None):
             failures.append('Threshold unit not supported literally by cited text; review required')
     manual = requirement.get('manual_comparison_threshold')
     target_unit = (precipitation_metadata or {}).get('comparison_unit') or requirement.get('unit')
+    if request.canonical_variable == 'surface_current_direction' and threshold is None and evidence.get('direction_convention') == 'TOWARDS_CLOCKWISE_FROM_NORTH':
+        # This angle is derived from U/V, not a provider-native degree field.
+        # Keep the model's original unit on the requirement for audit.
+        target_unit = 'degrees'
     if manual and request.canonical_variable == 'turbidity' and (target_unit or '').upper() == 'NTU':
         threshold = manual['value']; target_unit = 'FNU'
     points = []
@@ -241,12 +288,16 @@ def compatible_points(requirement, request, evidence, *, now=None):
             elif not requirement.get('explicit_requirement') or not requirement.get('unit') or not request.operator:
                 notes.append('Explicit source threshold, unit and operator required')
             else:
-                comparisons = {'<': lambda: value < threshold, '<=': lambda: value <= threshold,
-                    '>': lambda: value > threshold, '>=': lambda: value >= threshold,
-                    '==': lambda: value == threshold, '!=': lambda: value != threshold}
+                comparison_value = value
+                if request.canonical_variable in {'eastward_current','northward_current'} and re.search(
+                        r'\babsolute\s+(?:eastward|northward|current|component|value|[UV]\b)', source_text, re.I):
+                    comparison_value = abs(value)
+                comparisons = {'<': lambda: comparison_value < threshold, '<=': lambda: comparison_value <= threshold,
+                    '>': lambda: comparison_value > threshold, '>=': lambda: comparison_value >= threshold,
+                    '==': lambda: comparison_value == threshold, '!=': lambda: comparison_value != threshold}
                 if request.operator in comparisons:
                     comparison = comparisons[request.operator]()
-                    state = 'WITHIN_THRESHOLD' if comparison else 'THRESHOLD_EXCEEDED'
+                    state = 'THRESHOLD_EXCEEDED' if comparison else 'WITHIN_THRESHOLD'
                 else:
                     notes.append('Unsupported comparison')
         conversion_method = ('IDENTITY' if precipitation_metadata else
@@ -266,6 +317,9 @@ def compatible_points(requirement, request, evidence, *, now=None):
               'THRESHOLD_EXCEEDED' if 'THRESHOLD_EXCEEDED' in statuses else
               'INFORMATIONAL' if threshold is None else 'WITHIN_THRESHOLD')
     # Full-period summaries require a regular hourly-or-finer series, endpoints and no gaps.
+    from .recency import policy, select
+    recency_rule = policy(request.canonical_variable, request.depth)
+    recency_metadata = None
     temporal_status = 'INCOMPLETE'
     if points:
         times = sorted(set(utc(p['data_time']) for p in points))
@@ -276,25 +330,39 @@ def compatible_points(requirement, request, evidence, *, now=None):
             status = 'INSUFFICIENT_DATA'; failures.append('Requested period not fully covered; point results only')
         else:
             temporal_status = 'COVERED'
-    all_notes = list(dict.fromkeys(failures + [note for point in points for note in point['validation_notes']]))
+    if recency_rule:
+        selected, recency_metadata = select(points, request.start_time, request.canonical_variable, request.depth)
+        if selected is not None:
+            status = selected['status']
+            temporal_status = 'REFERENCE_EVIDENCE_ONLY'
+            points = [selected] + [p for p in points if p is not selected]
+            failures = [f for f in failures if f != 'Requested period not fully covered; point results only']
+        else:
+            status = 'INSUFFICIENT_DATA'
+            failures.append(recency_metadata['reason_code'])
+    qualification_points = [selected] if recency_rule and selected is not None else points
+    all_notes = list(dict.fromkeys(failures + [note for point in qualification_points for note in point['validation_notes']]))
     if not points:
         all_notes.append('Missing required values in requested provider period')
     for point in points:
-        point['threshold_evaluation'] = ('NOT_DETERMINED' if point['status'] == 'INSUFFICIENT_DATA' or temporal_status != 'COVERED'
+        point['threshold_evaluation'] = ('NOT_DETERMINED' if point['status'] == 'INSUFFICIENT_DATA' or temporal_status not in {'COVERED', 'REFERENCE_EVIDENCE_ONLY'}
             else 'TRIGGERED' if point['comparison'] is True else 'NOT_TRIGGERED' if point['comparison'] is False else 'NOT_APPLICABLE')
     trigger = ('NOT_DETERMINED' if status == 'INSUFFICIENT_DATA' else 'NOT_APPLICABLE' if threshold is None
                else 'TRIGGERED' if any(p['comparison'] is True for p in points) else 'NOT_TRIGGERED')
+    if recency_rule and status != 'INSUFFICIENT_DATA':
+        trigger = 'TRIGGERED' if points[0]['comparison'] is True else 'NOT_TRIGGERED'
     coverage = {'requested_start':request.start_time, 'requested_end':request.end_time,
         'provider_query_start':request.provider_query_start or request.start_time,
         'provider_query_end':request.provider_query_end or request.end_time,
         'temporal_resolution_seconds':request.timestep_seconds,
         'actual_start':times[0].isoformat() if points else None,
         'actual_end':times[-1].isoformat() if points else None, 'points':len(points)}
-    return {**evidence, 'points': points, 'status': status, 'validation_notes': all_notes, 'coverage':coverage,
+    return {**evidence, **({'recency_policy': recency_metadata} if recency_rule else {}), 'points': points, 'status': status, 'validation_notes': all_notes, 'coverage':coverage,
             'retrieval_status':'SUCCESS', 'temporal_coverage_status':temporal_status,
             'spatial_distance_status':'WITHIN_CONFIGURED_DISTANCE' if allowed_distance is not None and evidence.get('distance_km') is not None and evidence['distance_km'] <= allowed_distance else 'OUTSIDE_OR_UNKNOWN_DISTANCE',
             'applicability_status':evidence.get('quality_status'), 'threshold_evaluation':trigger,
-            'threshold_evaluation_scope':'Any returned point triggers; not an aggregated regulatory statistic',
+            'threshold_evaluation_scope':('Latest compatible native reference at the requested assessment time under the configured recency policy; rejected points retained for audit'
+                if recency_rule else 'Any returned point triggers; not an aggregated regulatory statistic'),
             'qualification':'Coastal applicability requires human review. Not a compliance conclusion or operational authorization.' if evidence.get('quality_status') == 'COASTAL_REVIEW_REQUIRED' else 'Not a compliance conclusion or operational authorization.',
             'max_representative_distance_km':allowed_distance,
             'comparison_scope': 'Point comparisons only; never operational authorization'}
@@ -330,6 +398,8 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
             reasons.append(routing['notes'])
         if not row.get('source_verified'):
             reasons.append('Source verification required before fetching')
+        if row.get('threshold_interpretation_error'):
+            reasons.append(row['threshold_interpretation_error'])
         if routing['canonical_variable'] == 'turbidity':
             if row['comparison_status']=='MANUAL_FNU_REQUIRED':
                 manual = inputs.manual_fnu_thresholds.get(row['requirement_index'])
@@ -355,12 +425,16 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
                             for g in analysis.get('geofences', []))
         if complex_scope and not inputs.point_scope_confirmed:
             reasons.append('Spatial sampling strategy required; a point cannot represent the whole geofence')
-        depth, depth_error = source_depth(row)
+        depth_sensitive = routing['canonical_variable'] == 'dissolved_oxygen'
+        source_nominal, depth_error = source_depth(row)
+        depth = source_nominal if depth_sensitive else None
+        if not depth_sensitive and source_nominal not in {None,0}:
+            reasons.append('Configured surface/2-D capability cannot satisfy the source-specific subsurface depth.')
         if depth_error:
             reasons.append(depth_error)
         if depth is not None and inputs.depth is not None and inputs.depth != depth:
             reasons.append('Selected depth conflicts with source depth')
-        if depth is None:
+        if depth is None and depth_sensitive and not depth_error:
             depth = inputs.depth  # Explicit user selection, never an inferred default.
         if routing['canonical_variable'] == 'dissolved_oxygen' and depth is None:
             reasons.append('Explicit depth required for 3-D dissolved oxygen evidence')
@@ -373,6 +447,7 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
             coordinates=(inputs.latitude, inputs.longitude), start_time=inputs.start_time.astimezone(timezone.utc).isoformat(),
             end_time=inputs.end_time.astimezone(timezone.utc).isoformat(),
             depth=depth,
+            **(depth_metadata(row) if routing['canonical_variable'] == 'dissolved_oxygen' else {}),
             evidence_mode=row['evidence_type'].strip().lower().replace('-', '_'), provider=provider,
             requested_unit='FNU' if row.get('manual_comparison_threshold') else row.get('comparison_unit') or row['unit'],
             comparison_unit=row.get('comparison_unit'),
@@ -394,6 +469,13 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
             request.timestep_seconds = 3600
         request.provider_query_start, request.provider_query_end = timestep_bounds(
             request.start_time, request.end_time, request.timestep_seconds)
+        from .recency import policy
+        recency_rule = policy(request.canonical_variable, request.depth) if provider == 'COPERNICUS_MARINE' else None
+        if recency_rule:
+            from datetime import timedelta
+            # One bounded query includes direct-time values and the permitted
+            # backward search. Selection prefers the newest past native value.
+            request.provider_query_start = (utc(request.start_time)-timedelta(hours=recency_rule[0])).isoformat()
         request_data = request.model_dump(mode='json')
         row['request'] = request_data
         # Dataset configuration changes invalidate local provider evidence, not AI results.
@@ -441,6 +523,9 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
                 row['cache_state'] = 'FETCHED'
             if provider == 'COPERNICUS_MARINE' and routing['canonical_variable'] in CURRENT_VARIABLES:
                 evidence = copernicus.project_current_or_wave_evidence(evidence, routing['canonical_variable'], variable)
+            if not depth_sensitive:
+                evidence = {**evidence, 'depth':None,'requested_depth':None,'requested_depth_m':None,
+                            'selected_depth_m':None,'depth_difference_m':None}
             fetched[identity] = evidence
             row['evidence'] = compatible_points(row, request, evidence)
             row['retrieval_status'] = row['cache_state']
@@ -482,6 +567,14 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
                 details['variable'] = WEATHER.get(request.canonical_variable)
             details['recorded_at'] = datetime.now(timezone.utc).isoformat()
             row['provider_diagnostic'] = details
+            if isinstance(exc, ProviderError) and exc.metadata:
+                row['provider_metadata'] = exc.metadata
+                details['returned_metadata'] = exc.metadata
+                row['diagnostic_evidence'] = {**exc.metadata,'diagnostic_only':True,
+                    'retrieval_status':'PROVIDER_RESPONSE_OBTAINED','suitability_status':category,
+                    'screening_status':'NOT_DETERMINED','failure_code':category,'failure_explanation':message,
+                    'requested_start':request.start_time,'requested_end':request.end_time,
+                    'provider_query_start':request.provider_query_start,'provider_query_end':request.provider_query_end}
             row['retrieval_status'] = 'FAILED'
             row['notes_for_evaluation'] = message
             cache_dir.joinpath('errors').mkdir(parents=True, exist_ok=True)
@@ -499,7 +592,21 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
         key = row['evidence_request_key']
         group = groups.setdefault(key, {**row, 'checks':[]})
         group['checks'].append({k:row.get(k) for k in ('condition_id','operator','threshold','unit','status','evidence','derivation','manual_comparison_threshold','original_threshold')})
-        if row['status'] == 'INSUFFICIENT_DATA':
+        if row['status'] == 'INSUFFICIENT_DATA' and not (row['canonical_variable'] in CURRENT_VARIABLES and row.get('threshold') is None):
             group['status'] = 'INSUFFICIENT_DATA'
+    for group in groups.values():
+        if group['canonical_variable'] not in CURRENT_VARIABLES:
+            continue
+        gating = [check for check in group['checks'] if check.get('threshold') is not None]
+        group['gating_condition_ids'] = [check['condition_id'] for check in gating]
+        group['informational_condition_ids'] = [check['condition_id'] for check in group['checks'] if check.get('threshold') is None]
+        if gating:
+            primary = next(row for row in rows if row.get('evidence_request_key')==group['evidence_request_key'] and row.get('threshold') is not None)
+            for key in ('canonical_variable','operator','threshold','unit','condition_id'):
+                group[key] = primary.get(key)
+            group['evidence'] = gating[0]['evidence']
+            group['status'] = ('INSUFFICIENT_DATA' if any(c['status']=='INSUFFICIENT_DATA' for c in gating) else
+                               'THRESHOLD_EXCEEDED' if any(c['status']=='THRESHOLD_EXCEEDED' for c in gating) else 'WITHIN_THRESHOLD')
     return {'requirements': rows, 'evidence_groups':list(groups.values()), 'provider_status': states, 'executable_rules': 0,
+            'diagnostic_groups':[row for row in rows if row.get('diagnostic_evidence')],
             'notes': 'Environmental evidence only. Human review and deciding evidence remain required.'}

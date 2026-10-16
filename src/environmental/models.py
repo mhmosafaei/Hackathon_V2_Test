@@ -45,6 +45,8 @@ class EnvironmentalRequest(BaseModel):
     start_time: str | None = None
     end_time: str | None = None
     depth: float | None = None
+    requested_depth_mode: str | None = None
+    depth_tolerance_m: float | None = None
     evidence_mode: str
     provider: str
     dataset_id: str | None = None

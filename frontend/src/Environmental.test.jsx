@@ -20,6 +20,69 @@ const doc = () => ({analysis_id:'fresh', filename:'synthetic-environment.pdf',mo
 const session = {boot_id:'boot',mode:'MOCK',provider_status:{COPERNICUS_MARINE:'Credentials required',ECMWF_FORECAST:'Public endpoint configured · connection not tested'}};
 afterEach(() => {vi.restoreAllMocks();vi.unstubAllGlobals();});
 
+it('displays informational wave convention and derived current direction without Fetch',()=>{
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  const wave={...row,condition_id:'5',canonical_variable:'mean_wave_direction',operator:null,threshold:null,unit:'degrees',status:'INFORMATIONAL',
+    evidence:{canonical_variable:'mean_wave_direction',points:[{raw_value:241,unit:'degree',data_time:'2026-10-14T00:00:00Z'}],
+      direction_convention:'PROVIDER_DEFINED_NOT_NORMALIZED',direction_metadata:{long_name:'Mean wave direction from',standard_name:'sea_surface_wave_from_direction',units:'degree'}}};
+  const current={...row,condition_id:'12',canonical_variable:'surface_current_direction',operator:null,threshold:null,unit:'degrees',status:'INFORMATIONAL',
+    evidence:{canonical_variable:'surface_current_direction',points:[{raw_value:0,unit:'degrees',data_time:'2026-10-14T00:00:00Z',component_values:{uo:0,vo:1},derivation:{method:'ATAN2_U_V_TOWARDS_CLOCKWISE_FROM_NORTH'}}],direction_convention:'TOWARDS_CLOCKWISE_FROM_NORTH'}};
+  current.checks=[{condition_id:'12',threshold:null,status:'INFORMATIONAL',evidence:current.evidence}];
+  render(<Environmental analysis={doc()} session={{...session,environmental_result:{analysis_id:'fresh',requirements:[wave,current],evidence_groups:[wave,current]}}}/>);
+  expect(screen.getByText(/Mean wave direction from/)).toBeTruthy();
+  expect(screen.getByTestId('current-direction-details')).toHaveTextContent('DERIVED FROM COPERNICUS U/V');
+  expect(screen.getByTestId('current-direction-details')).toHaveTextContent('0 degrees');
+  expect(screen.getByTestId('current-direction-details')).toHaveTextContent('TOWARDS_CLOCKWISE_FROM_NORTH');
+  expect(screen.getByTestId('threshold-check')).toHaveTextContent('Displayed point: INFORMATIONAL');
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it('screens selected recency evidence without masked audit points poisoning series result',()=>{
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  const evidence={points:[{data_time:'2026-10-13T00:00:00Z',raw_value:1.1488773822784424,unit:'FNU',comparison:false},
+    {data_time:'2026-10-14T00:00:00Z',raw_value:null,unit:'FNU',comparison:null,status:'INSUFFICIENT_DATA'}],
+    recency_policy:{age_hours:24,max_age_hours:72},threshold_evaluation:'NOT_TRIGGERED',validation_notes:[]};
+  const turbidity={...row,condition_id:'14',canonical_variable:'turbidity',operator:'>',threshold:25,unit:'FNU',status:'WITHIN_THRESHOLD',evidence};
+  const group={...turbidity,checks:[turbidity]};
+  render(<Environmental analysis={doc()} session={{...session,environmental_result:{analysis_id:'fresh',requirements:[turbidity],evidence_groups:[group]}}}/>);
+  expect(screen.getByTestId('threshold-check')).toHaveTextContent('Series: NOT TRIGGERED');
+  expect(screen.getByTestId('threshold-check')).toHaveTextContent('Displayed point: NOT TRIGGERED');
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it('displays actual reference timestamp and age without fetching',()=>{
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  const evidence={...row,canonical_variable:'turbidity',evidence:{points:[{data_time:'2026-10-13T00:00:00Z',raw_value:2,unit:'FNU',normalized_unit:'FNU'}],recency_policy:{source_timestamp:'2026-10-13T00:00:00Z',assessed_time:'2026-10-15T00:00:00Z',age_hours:48,max_age_hours:72},dataset_variable:'TUR',data_type:'SATELLITE_OBSERVATION'}};
+  render(<Environmental session={{...session,environmental_result:{analysis_id:'fresh',requirements:[evidence],evidence_groups:[evidence]}}} analysis={doc()}/>);
+  expect(screen.getByTestId('evidence-card')).toHaveTextContent('age 48 hours');
+  expect(screen.getByTestId('evidence-card')).toHaveTextContent('Historical/reference evidence');
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it('serializes explicit zero depth as zero and blank depth as null',async()=>{
+  const fetch=vi.fn().mockResolvedValue({ok:true,json:async()=>({requirements:[row]})});vi.stubGlobal('fetch',fetch);
+  render(<Environmental session={session} analysis={doc()}/>);
+  fireEvent.change(screen.getByLabelText('Depth (m, when applicable)'),{target:{value:'0'}});
+  fireEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+  await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(fetch.mock.calls[0][1].body).depth).toBe(0);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Fetch Environmental Data'})).not.toBeDisabled());
+  fireEvent.change(screen.getByLabelText('Depth (m, when applicable)'),{target:{value:''}});
+  fireEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+  await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(fetch.mock.calls[1][1].body).depth).toBeNull();
+});
+
+it('shows rejected oxygen depth metadata without claiming usable evidence or fetching',()=>{
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  const oxygen={...row,canonical_variable:'dissolved_oxygen',provider_diagnostic:{provider:'COPERNICUS_MARINE',dataset_id:'configured-o2',variable:'o2',provider_error_category:'DEPTH_TOLERANCE_EXCEEDED',provider_error_message:'Nearest level exceeds 0.5 m tolerance.'},provider_metadata:{requested_depth_m:1,requested_depth_mode:'APPROXIMATE',depth_tolerance_m:.5,returned_depth_levels_m:[1.51],selected_depth_m:1.51,depth_difference_m:.51}};
+  render(<Environmental session={{...session,environmental_result:{analysis_id:'fresh',requirements:[row],diagnostic_groups:[oxygen]}}} analysis={doc()}/>);
+  expect(screen.getByTestId('provider-diagnostic-card')).toHaveTextContent('1.51');
+  expect(screen.getByTestId('provider-diagnostic-card')).toHaveTextContent('APPROXIMATE');
+  expect(screen.getByTestId('provider-diagnostic-card')).toHaveTextContent('DEPTH_TOLERANCE_EXCEEDED');
+  expect(screen.queryByTestId('evidence-card')).toBeNull();expect(fetch).not.toHaveBeenCalled();
+});
+
 describe('environmental evidence view', () => {
   it('has a clean empty state before analysis', () => {
     render(<Environmental session={session}/>);

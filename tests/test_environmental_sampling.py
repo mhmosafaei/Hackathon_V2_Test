@@ -123,6 +123,7 @@ def test_oxygen_exact_depth_passed_to_toolbox(monkeypatch):
     ds=xr.Dataset({'o2':(('time','depth','latitude','longitude'),np.array([[[[200.]]]]))},
         coords={'time':np.array(['2026-10-12T00:00'],dtype='datetime64[m]'),'depth':[1.],'latitude':[54.],'longitude':[-6.]})
     ds['o2'].attrs['units']='mmol m-3'
+    ds['depth'].attrs.update(units='m', positive='down')
     def opened(**kw):calls.append(kw);return ds
     monkeypatch.setattr(copernicusmarine,'open_dataset',opened)
     req=EnvironmentalRequest(condition_id='test',requirement_text='test',canonical_variable='dissolved_oxygen',
@@ -130,7 +131,8 @@ def test_oxygen_exact_depth_passed_to_toolbox(monkeypatch):
         start_time='2026-10-12T16:41:00Z',end_time='2026-10-13T16:41:00Z',
         provider_query_start='2026-10-12T00:00:00Z',provider_query_end='2026-10-14T00:00:00Z')
     e=worker(req)
-    assert calls[0]['minimum_depth']==calls[0]['maximum_depth']==1
+    assert calls[0]['minimum_depth']==.5 and calls[0]['maximum_depth']==1.5
+    assert calls[0]['coordinates_selection_method']=='outside'
     assert calls[0]['start_datetime']==req.provider_query_start
     assert e['points'][0]['unit']=='mmol m-3' and 'supportive' in e['notes']
     from src.environmental.units import convert

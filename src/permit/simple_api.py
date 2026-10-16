@@ -19,6 +19,7 @@ from src.environmental.models import EvaluationInput
 from src.environmental.service import evaluate, provider_status
 from src.environmental.capabilities import capability_matrix
 from .persisted_analysis import load_persisted_analysis
+from .review_overlays import list_reviews, save_review, bulk_approve
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -36,6 +37,17 @@ class RestoreInput(BaseModel):
     analysis_run_id: str = Field(pattern=r'^[0-9a-fA-F]{32,64}$')
 
 
+class DecisionInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    analysis_run_id: str
+    document_sha256: str
+    start: str | None = None
+    horizon_hours: int = 72
+    duration_hours: int = 4
+    include_conditional: bool = False
+    ranking: str = 'earliest'
+
+
 
 
 def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports=None, coordinate_transport=None):
@@ -47,6 +59,81 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
     # are intentionally separate from immutable permit analysis artifacts.
     app.state.environmental_results = {}
     app.state.conversions = {}
+    app.state.decisions = {}
+
+    @app.post('/api/decision/evaluate')
+    async def decision(inputs: DecisionInput, request: Request):
+        origin = request.headers.get('origin')
+        if origin and origin != str(request.base_url).rstrip('/'):
+            return JSONResponse({'error': 'Request origin rejected.'}, status_code=403)
+        if request.headers.get('x-session-id') != app.state.boot_id:
+            return JSONResponse({'error': 'STALE_SESSION'}, status_code=409)
+        analysis = app.state.analyses.get(inputs.analysis_run_id)
+        if not analysis or analysis.get('document_sha256') != inputs.document_sha256:
+            return JSONResponse({'error': 'ACTIVE_ANALYSIS_IDENTITY_MISMATCH'}, status_code=409)
+        try:
+            from .decision_engine import assess
+            result = assess(list_reviews(root, analysis), app.state.environmental_results.get(inputs.analysis_run_id),
+                start=inputs.start, horizon_hours=inputs.horizon_hours, duration_hours=inputs.duration_hours,
+                include_conditional=inputs.include_conditional, ranking=inputs.ranking)
+            app.state.decisions[inputs.analysis_run_id] = result
+            return result
+        except (ValueError, OSError, TypeError, KeyError):
+            return JSONResponse({'error': 'DECISION_INPUT_OR_REVIEW_INVALID'}, status_code=422)
+
+    @app.get('/api/reviews')
+    async def reviews(analysis_id: str, request: Request):
+        if request.headers.get('x-session-id') != app.state.boot_id:
+            return JSONResponse({'error': 'STALE_SESSION'}, status_code=409)
+        analysis = app.state.analyses.get(analysis_id)
+        if not analysis:
+            return JSONResponse({'error': 'ACTIVE_ANALYSIS_REQUIRED'}, status_code=404)
+        try:
+            return list_reviews(root, analysis)
+        except (ValueError, OSError) as exc:
+            return JSONResponse({'error': str(exc) if isinstance(exc, ValueError) else 'REVIEW_STORE_UNAVAILABLE'}, status_code=409)
+
+    @app.put('/api/reviews/bulk-approve')
+    async def approve_all(request: Request):
+        origin = request.headers.get('origin')
+        if origin and origin != str(request.base_url).rstrip('/'):
+            return JSONResponse({'error': 'Request origin rejected.'}, status_code=403)
+        if request.headers.get('x-session-id') != app.state.boot_id:
+            return JSONResponse({'error': 'STALE_SESSION'}, status_code=409)
+        try:
+            body = await request.json()
+            if not isinstance(body, dict) or set(body) != {'analysis_run_id', 'document_sha256', 'reviewer', 'targets'}:
+                raise ValueError('INVALID_BULK_REQUEST')
+            if not isinstance(body['analysis_run_id'], str) or not isinstance(body['document_sha256'], str):
+                raise ValueError('INVALID_REVIEW_IDENTITY')
+            analysis = app.state.analyses.get(body['analysis_run_id'])
+            if not analysis or analysis.get('document_sha256') != body['document_sha256']:
+                return JSONResponse({'error': 'ACTIVE_ANALYSIS_IDENTITY_MISMATCH'}, status_code=409)
+            return bulk_approve(root, analysis, body['reviewer'], body['targets'])
+        except (ValueError, OSError) as exc:
+            return JSONResponse({'error': str(exc) if isinstance(exc, ValueError) else 'REVIEW_STORE_UNAVAILABLE'}, status_code=422)
+
+    @app.put('/api/reviews/{target_id}')
+    async def review(target_id: str, request: Request):
+        origin = request.headers.get('origin')
+        if origin and origin != str(request.base_url).rstrip('/'):
+            return JSONResponse({'error': 'Request origin rejected.'}, status_code=403)
+        if request.headers.get('x-session-id') != app.state.boot_id:
+            return JSONResponse({'error': 'STALE_SESSION'}, status_code=409)
+        try:
+            body = await request.json()
+            if not isinstance(body, dict) or set(body) != {'analysis_run_id', 'document_sha256', 'review'}:
+                raise ValueError('INVALID_REVIEW_REQUEST')
+            if not isinstance(body['analysis_run_id'], str) or not isinstance(body['document_sha256'], str):
+                raise ValueError('INVALID_REVIEW_IDENTITY')
+            analysis = app.state.analyses.get(body['analysis_run_id'])
+            if not analysis or analysis.get('document_sha256') != body['document_sha256']:
+                return JSONResponse({'error': 'ACTIVE_ANALYSIS_IDENTITY_MISMATCH'}, status_code=409)
+            if not isinstance(body['review'], dict):
+                raise ValueError('INVALID_REVIEW_REQUEST')
+            return save_review(root, analysis, target_id, body['review'])
+        except (ValueError, OSError) as exc:
+            return JSONResponse({'error': str(exc) if isinstance(exc, ValueError) else 'REVIEW_STORE_UNAVAILABLE'}, status_code=422)
 
     @app.post('/api/coordinates/convert')
     async def coordinates(inputs: CoordinateInput, request: Request):
@@ -86,6 +173,7 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
         active_analysis_id = next(iter(app.state.analyses), None)
         return {'boot_id': app.state.boot_id, 'mode': 'MOCK' if transport else 'LIVE',
                 'provider_status': provider_status(), 'environmental_capabilities': capability_matrix(),
+                'decision_result': app.state.decisions.get(active_analysis_id),
                 'environmental_result': app.state.environmental_results.get(active_analysis_id)}
 
     @app.post('/api/restore')

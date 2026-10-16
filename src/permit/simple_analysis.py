@@ -94,10 +94,10 @@ def response_schema():
 # candidates. Provider, transport, AIS/GNSS and unit words are supporting
 # context only; neither category is sufficient by itself.
 _ENVIRONMENTAL_SUBJECT_MARKERS = re.compile(
-    r"(?i)\b(?:wave|current|wind|precipitation|rainfall|visibility|"
+    r"(?i)\b(?:wave|Hs|current|wind|precipitation|rainfall|visibility|"
     r"air\s+temperature|sea[- ]surface(?:\s+(?:temperature|height))?|"
     r"water\s+level|dissolved\s+oxygen|turbidity|salinity|pH|chlorophyll|"
-    r"sediment|seabed|benthos|environmental\s+(?:monitoring|sample|measurement)|"
+    r"sediment|suspended\s+solid[- ]particles?|seabed|benthos|environmental\s+(?:monitoring|sample|measurement)|"
     r"monitoring\s+(?:station|point|sample)|local\s+sensor)\b"
 )
 _ENVIRONMENTAL_UNIT_WORKFLOW = re.compile(
@@ -109,7 +109,8 @@ _ENVIRONMENTAL_EVIDENCE_SEMANTICS = re.compile(
     r"observ(?:e|ed|ation|ations)?|report(?:ed|ing)?|thresholds?|limits?|"
     r"values?|evidence|informational\s+evidence|availability|available|unsupported|"
     r"unavailable|manual\s+(?:evidence|comparison)|request(?:ed|ing|s)?|"
-    r"flag(?:ged|ging)?)\b"
+    r"flag(?:ged|ging)?|assess(?:ed|ment)?|retain(?:ed)?|expressed|derived|"
+    r"greater\s+than|less\s+than|below|above)\b"
 )
 _PROCESS_ONLY_SEMANTICS = re.compile(
     r"(?i)\b(?:reuse|re-use|sharing?|shared|deduplication|redundant|"
@@ -131,6 +132,15 @@ _NUMERIC_CONDITION_HEADING = re.compile(r"(?m)^\s*(\d{1,4})\.\s+")
 
 def _is_environmental_measurement_candidate(source: str) -> bool:
     """Require a measurement subject and evidence semantics, not keywords alone."""
+    source = re.sub(r'\s+', ' ', source)
+    # Software policy is not a measurement obligation. A distinct affirmative
+    # measurement/threshold sentence still qualifies when accompanied by policy.
+    operative = re.sub(r'[^.!?]*(?:shall\s+not\s+(?:invent|infer|convert|substitute|treat)|'
+                       r'does\s+not\s+constitute|WORK\s+result\s+means)[^.!?]*[.!?]?', '', source, flags=re.I)
+    source = operative
+    if (re.search(r'\b(?:disclaimer|evidence\s+limitations?|provider[- ]policy|assessment[- ]limitation)\b', source, re.I)
+            and not re.search(r'\b(?:shall|must)\b[^.!?]{0,80}\b(?:assess(?:ed)?|measure(?:d)?|record(?:ed)?|monitor(?:ed)?|sample(?:d)?|survey(?:ed)?|retriev(?:e|ed))\b|\b(?:STOP\s+(?:condition|if)|greater\s+than|less\s+than|below|above)\s*[:><=]*\s*\d', source, re.I)):
+        return False
     has_subject = (_ENVIRONMENTAL_SUBJECT_MARKERS.search(source)
                    or _ENVIRONMENTAL_UNIT_WORKFLOW.search(source))
     if not has_subject:
@@ -156,14 +166,24 @@ def _is_environmental_measurement_candidate(source: str) -> bool:
 def identify_environmental_source_candidates(pages):
     """Find explicit environmental source clauses without interpreting them."""
     candidates = []
+    # A numbered clause can continue on the next physical page. Do not lose
+    # its threshold at the page boundary, or absorb an unnumbered reference table.
+    text = '\n'.join(page.text or '' for page in pages)
+    offsets = []
+    offset = 0
     for page in pages:
-        text = page.text or ''
-        matches = list(_NUMERIC_CONDITION_HEADING.finditer(text))
-        for index, match in enumerate(matches):
+        offsets.append((offset, offset + len(page.text or ''), page))
+        offset += len(page.text or '') + 1
+    matches = list(_NUMERIC_CONDITION_HEADING.finditer(text))
+    for index, match in enumerate(matches):
             end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+            section = re.search(r'(?im)^\s*(?:quick[- ]reference\b|appendix\b|annex\b)', text[match.start():end])
+            if section:
+                end = match.start() + section.start()
             source = text[match.start():end].strip()
             if not _is_environmental_measurement_candidate(source):
                 continue
+            page = next(p for a, b, p in offsets if a <= match.start() <= b)
             number = match.group(1)
             candidates.append({
                 'source_record_id': f'environmental-condition-p{page.page_number}-{number}',
@@ -171,7 +191,8 @@ def identify_environmental_source_candidates(pages):
                 'source_page': page.page_number,
                 'source_location': f'PDF page {page.page_number}, condition {number}',
                 'source_text': source,
-                'source_spans': [{'page': page.page_number, 'quotation': source}],
+                'source_spans': [{'page': p.page_number, 'quotation': text[max(match.start(), a):min(end, b)].strip()}
+                                 for a,b,p in offsets if max(match.start(),a) < min(end,b)],
             })
     return candidates
 
@@ -237,6 +258,7 @@ def reconcile_source_attribution(record, page_map):
     attributions are left untouched; ambiguous or absent matches remain
     unresolved and therefore cannot pass normal source verification.
     """
+    page_map = {page: normalise(text) for page, text in page_map.items()}
     spans = record.get('source_spans') or []
     if not spans:
         return record
@@ -309,6 +331,53 @@ def reconcile_source_attribution(record, page_map):
     return record
 
 
+def reconcile_cross_page_quote(record, pages):
+    """Split one unique contiguous quotation across physical page boundaries.
+
+    Only identical repeated edge headers and explicit page-number lines are
+    removed. No punctuation, interior wording or semantic matches are removed.
+    """
+    spans = record.get('source_spans') or []
+    if len(spans) != 1 or record.get('source_reconciliation', {}).get('status') != 'UNRESOLVED_NO_UNIQUE_MATCH':
+        return
+    edge_lines = {}
+    for page in pages:
+        lines = (page.text or '').splitlines()
+        for line in set(lines[:3] + lines[-3:]):
+            key = normalise(line)
+            if key:
+                edge_lines.setdefault(key, set()).add(page.page_number)
+    segments = []
+    for page in pages:
+        lines = (page.text or '').splitlines()
+        kept = [line for i, line in enumerate(lines) if not (
+            (i < 3 or i >= len(lines)-3) and (len(edge_lines.get(normalise(line), set())) > 1
+            or re.fullmatch(r'\s*Page\s+\d+\s*', line, re.I)))]
+        segments.append((page.page_number, normalise('\n'.join(kept))))
+    full = ' '.join(text for _, text in segments)
+    quote = normalise(spans[0].get('quotation') or '')
+    matches = list(re.finditer(re.escape(quote), full)) if quote else []
+    if len(matches) != 1:
+        return
+    start, end = matches[0].span()
+    offset, split = 0, []
+    for page, text in segments:
+        a, b = max(start, offset), min(end, offset+len(text))
+        if a < b:
+            split.append({'page': page, 'quotation': text[a-offset:b-offset]})
+        offset += len(text)+1
+    if len(split) < 2 or any(b['page'] != a['page']+1 for a,b in zip(split, split[1:])):
+        return
+    record['original_source_spans'] = [dict(span) for span in spans]
+    record['model_declared_source_page'] = record.get('model_declared_source_page', record.get('source_page', spans[0]['page']))
+    record['verified_source_spans'] = split
+    record['source_page'] = split[0]['page']
+    record['reconciled_source_page'] = split[0]['page']
+    record['source_reconciliation'] = {'status': 'UNIQUE_EXACT_CROSS_PAGE_MATCH',
+        'model_declared_source_page': record['model_declared_source_page'],
+        'reconciled_physical_pages': [s['page'] for s in split]}
+
+
 def reconcile_payload_source_attribution(payload, pages):
     """Apply exact-page reconciliation to all source-backed payload records."""
     page_map = {page.page_number: normalise(page.text) for page in pages}
@@ -324,6 +393,7 @@ def reconcile_payload_source_attribution(payload, pages):
         reconcile_source_attribution(geofence, page_map)
     for requirement in payload.get('environmental_requirements', []):
         reconcile_source_attribution(requirement, page_map)
+        reconcile_cross_page_quote(requirement, pages)
     return payload
 
 
@@ -384,8 +454,9 @@ def apply_source_verification(payload, pages, *, reset_review_state=True):
             geofence['review_state'] = 'UNREVIEWED'
             geofence['executable'] = False
     for requirement in payload.get('environmental_requirements', []):
-        requirement['source_verified'] = (verified(requirement.get('source_spans')) and
-            requirement.get('source_page') in {s['page'] for s in requirement.get('source_spans', [])} and
+        verification_spans = requirement.get('verified_source_spans', requirement.get('source_spans', []))
+        requirement['source_verified'] = (verified(verification_spans) and
+            requirement.get('source_page') in {s['page'] for s in verification_spans} and
             requirement.get('condition_id') in seen)
         if reset_review_state:
             requirement['review_state'] = 'UNREVIEWED'
@@ -397,6 +468,7 @@ def source_spans_verified(spans, page_map):
     """Apply the normal exact normalized-quotation verification rule."""
     return bool(spans) and all(span.get('page') in page_map and normalise(span.get('quotation')) and
                                normalise(span.get('quotation')) in page_map[span.get('page')]
+                               and sum(normalise(span.get('quotation')) in text for text in page_map.values()) == 1
                                for span in spans)
 
 

@@ -1,5 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import Environmental from './Environmental.jsx';
+import HumanReview from './HumanReview.jsx';
+import DecisionWorkWindows from './DecisionWorkWindows.jsx';
 import brandLogo from './assets/permitpulse-logo.png';
 import brandWordmark from './assets/permitpulse-wordmark.png';
 import {ArrowUpRight, FileText, Upload, Plus, Search, ShieldCheck, LoaderCircle, AlertCircle, ChevronDown, Waves} from 'lucide-react';
@@ -85,6 +87,7 @@ export default function App() {
   const [status, setStatus] = useState('empty');
   const [error, setError] = useState('');
   const [tab, setTab] = useState('permit');
+  const [reviewTarget, setReviewTarget] = useState(null);
   const input = useRef(null);
   const generation = useRef(0);
   const boot = useRef(null);
@@ -141,7 +144,9 @@ export default function App() {
     }
   }
   return <div className="app"><header className="header"><div className="brand"><img className="brand-symbol" src={brandLogo} alt=""/><div><img className="brand-wordmark" src={brandWordmark} alt="PermitPulse"/><span>AI-Powered Maritime Permit Intelligence</span></div></div><button className="button secondary" onClick={reset} disabled={status === 'loading'}><Plus size={16}/> New Analysis</button></header>
-    <main><nav className="intelligence-tabs" aria-label="Intelligence views"><button aria-pressed={tab === 'permit'} onClick={() => setTab('permit')}>Permit Intelligence</button><button aria-pressed={tab === 'environment'} onClick={() => setTab('environment')}>Environmental Intelligence</button></nav>
+    <main><nav className="intelligence-tabs" aria-label="Intelligence views"><button aria-pressed={tab === 'permit'} onClick={() => setTab('permit')}>Permit Intelligence</button><button aria-pressed={tab === 'environment'} onClick={() => setTab('environment')}>Environmental Intelligence</button><button aria-pressed={tab === 'review'} onClick={() => setTab('review')}>Human Review</button><button aria-pressed={tab === 'decision'} onClick={() => setTab('decision')}>Decision & Work Windows</button></nav>
+    {tab === 'decision' && <DecisionWorkWindows key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} onReview={id=>{setReviewTarget(id);setTab('review');}}/>}
+    {tab === 'review' && <HumanReview key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} initialTargetId={reviewTarget}/>}
     <div hidden={tab !== 'environment'}><Environmental key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session}/></div>
     <div hidden={tab !== 'permit'}>{currentAnalysis ? <Results analysis={currentAnalysis}/> : <>
       <div className="empty-heading"><div className="eyebrow">CLARITY BEFORE YOU OPERATE</div><h1>Analyze a Marine Permit</h1><p>Upload a PDF to extract its conditions, deadlines,<br className="desktop-break"/> operational limits and key compliance requirements.</p></div>

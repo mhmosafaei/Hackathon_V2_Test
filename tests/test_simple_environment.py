@@ -112,6 +112,9 @@ def test_multiple_evidence_cache_and_threshold(tmp_path):
 @pytest.mark.parametrize('case', ['threshold','informational','units','stale','gap','model','depth','numeric','null','statistic','variable','source_unit'])
 def test_evidence_compatibility(tmp_path,case):
     r=requirement(); doc=analysis(r)
+    if case=='depth':
+        r.update(variable='dissolved_oxygen',canonical_variable='dissolved_oxygen',depth_requirement='1 metre below sea surface',unit='mg/L',
+                 source_spans=[{'page':1,'quotation':'Dissolved oxygen at 1 metre below sea surface shall not exceed 2.5 mg/L.'}])
     def transport(request):
         e=mock_evidence(request)
         if case=='threshold':
@@ -262,7 +265,7 @@ def test_threshold_boundary_and_unknown_do_not_become_zero(tmp_path):
         for p in e['points']: p['raw_value']=2.5
         return e
     assert evaluate(analysis(requirement()),inputs(),tmp_path/'a',transports={'COPERNICUS_MARINE':transport})['requirements'][0]['status']=='WITHIN_THRESHOLD'
-    r=requirement(operator='<')
+    r=requirement(operator='<',source_spans=[{'page':1,'quotation':'STOP condition: wave height >= 2.5 m.'}])
     assert evaluate(analysis(r),inputs(),tmp_path/'b',transports={'COPERNICUS_MARINE':transport})['requirements'][0]['status']=='THRESHOLD_EXCEEDED'
     assert map_requirements(analysis(requirement(threshold=None)))[0]['threshold'] is None
 
@@ -299,8 +302,8 @@ def test_official_marine_worker_mocked_xarray(monkeypatch):
 
 def test_provider_request_count_is_bounded(tmp_path):
     # Distinct source-backed depths produce distinct evidence, unlike repeated IDs.
-    doc=analysis(*[requirement(condition_id=str(i),depth_requirement=f'{i} m below sea surface',
-        source_spans=[{'page':1,'quotation':f'Wave height shall not exceed 2.5 m at {i} m below sea surface.'}]) for i in range(15)])
+    doc=analysis(*[requirement('dissolved_oxygen',condition_id=str(i),unit='mg/L',depth_requirement=f'{i} m below sea surface',
+        source_spans=[{'page':1,'quotation':f'Dissolved oxygen shall not exceed 2.5 mg/L at {i} m below sea surface.'}]) for i in range(15)])
     calls=[]
     def transport(request): calls.append(1); return mock_evidence(request)
     result=evaluate(doc,inputs(),tmp_path,transports={'COPERNICUS_MARINE':transport})

@@ -14,6 +14,7 @@ ALIASES = {'wave_direction': 'mean_wave_direction', 'wind_speed': 'wind_speed_10
            # AI extraction may retain a descriptive suffix; these aliases keep
            # the provider-facing vocabulary canonical and deterministic.
            'mean_wave_direction_degrees': 'mean_wave_direction',
+           'wave_direction_degrees': 'mean_wave_direction',
            'dissolved oxygen': 'dissolved_oxygen', 'oxygen': 'dissolved_oxygen',
            'dissolved_oxygen_1m_below_surface': 'dissolved_oxygen',
            'eastward current': 'eastward_current', 'eastward_current': 'eastward_current',
@@ -25,6 +26,7 @@ ALIASES = {'wave_direction': 'mean_wave_direction', 'wind_speed': 'wind_speed_10
            'northward_current_component_v': 'northward_current',
            'current_v': 'northward_current', 'v current': 'northward_current', 'vo': 'northward_current',
            'current_direction_towards_degrees': 'surface_current_direction',
+           'current_direction_degrees_towards_true_north': 'surface_current_direction',
            'current_direction_towards': 'surface_current_direction',
            'air_temperature_2m':'air_temperature', 'temperature_2m':'air_temperature',
            'air temperature':'air_temperature', '2 m air temperature':'air_temperature',

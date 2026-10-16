@@ -105,6 +105,9 @@ def test_ambiguous_sst_not_derived(change):
 @pytest.mark.parametrize('failure',['time','distance','unit','missing','depth','source'])
 def test_real_failures_still_block(tmp_path,failure):
     r=requirement()
+    if failure=='depth':
+        r.update(variable='dissolved_oxygen',canonical_variable='dissolved_oxygen',depth_requirement='1 metre below sea surface',unit='mg/L',
+                 source_spans=[{'page':1,'quotation':'Dissolved oxygen at 1 metre below sea surface shall not exceed 2.5 mg/L.'}])
     def provider(req):
         e=query_evidence(req);e['quality_status']='COASTAL_REVIEW_REQUIRED'
         if failure=='time': e['points']=e['points'][1:]
