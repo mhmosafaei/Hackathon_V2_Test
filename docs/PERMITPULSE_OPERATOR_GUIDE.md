@@ -72,6 +72,22 @@ Environmental evidence and decisions are backend-session state. A clean restart 
 
 ## 2. Permit Intelligence: upload and Analyze
 
+### Hackathon MVP example permit and test settings
+
+For the hackathon MVP, use the [observation-compatible synthetic marine work permit](../data/permits/PermitPulse_Synthetic_Marine_Work_Permit_2026_2028_OBSERVATION_COMPATIBLE.pdf) included in this repository. It is a synthetic demonstration document, not a real regulatory authorization.
+
+The designated ideal example test window is **15 October 2026, 12:00 AM through 18 October 2026, 12:00 AM (UTC)**: midnight at the start of each date, exactly **72 hours**.
+
+| Control | Example value |
+|---|---|
+| Planned start (UTC) | `2026-10-15T00:00:00Z` |
+| Planned end (UTC) | `2026-10-18T00:00:00Z` |
+| Depth (m, when applicable) | **0 m** (enter `0`) |
+| Decision Start UTC | `2026-10-15 00:00` |
+| Timeline horizon | **72h** |
+
+These are demo inputs, not a guarantee of current provider availability or a WORK result. The window is historical once it has passed; forecast endpoints may no longer supply it. Do not shift timestamps, substitute evidence or bypass freshness/coverage checks to reproduce a result. Depth remains variable-scoped and source-backed.
+
 1. Click **Upload Permit**, choose a text-readable marine permit PDF (UI maximum 25 MB).
 2. Click **Analyze** once and wait. Do not repeatedly click **Try Again** without understanding the error.
 3. Confirm filename and run ID.

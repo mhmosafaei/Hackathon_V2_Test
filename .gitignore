@@ -27,4 +27,5 @@ cache/manifest.json
 data/permits/*.pdf
 data/contracts/*.pdf
 !data/permits/.gitkeep
+!data/permits/PermitPulse_Synthetic_Marine_Work_Permit_2026_2028_OBSERVATION_COMPATIBLE.pdf
 !data/contracts/.gitkeep
