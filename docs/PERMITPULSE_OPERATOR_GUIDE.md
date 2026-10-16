@@ -32,6 +32,14 @@ Use a local repository-root `.env`. Never commit it, print its contents during a
 | `COPERNICUSMARINE_SERVICE_USERNAME` | Copernicus worker account username. |
 | `COPERNICUSMARINE_SERVICE_PASSWORD` | Copernicus worker account password. |
 
+The current hackathon environment uses this model setting in the repository-root `.env`:
+
+```dotenv
+OPENAI_MODEL=gpt-4.1-mini
+```
+
+Set `OPENAI_API_KEY` separately to your own secret key in that local file. Never commit `.env` or include the key in documentation.
+
 The configured ECMWF adapter uses the public Open-Meteo endpoint without a secret. Dataset/capability configuration lives in `config/environmental_data_sources.json`; `config/environmental_limits.json` sets the 72h request maximum. Recency policies are application policies, not credential/environment overrides. Do not change configuration to bypass a failed qualification.
 
 ### Check port 8531
