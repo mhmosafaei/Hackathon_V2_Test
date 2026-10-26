@@ -83,7 +83,10 @@ describe('simple session dashboard', () => {
   });
   it('clears the active result after a server boot identity changes', async () => {
     let boot = 'boot-1';
-    vi.stubGlobal('fetch', vi.fn(async url => ({ok: true, json: async () => url === '/api/session' ? {boot_id: boot} : fixture()})));
+    vi.stubGlobal('fetch', vi.fn(async (url, options) => ({
+      ok: url === '/api/restore' ? boot === 'boot-1' : true,
+      json: async () => url === '/api/session' ? {boot_id: boot} : fixture(),
+    })));
     render(<App/>); const user = await upload(); await user.click(screen.getByRole('button', {name: 'Analyze', exact: true}));
     await screen.findByText('DEMO-2026');
     boot = 'boot-2';

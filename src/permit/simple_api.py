@@ -60,6 +60,7 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
     app.state.environmental_results = {}
     app.state.conversions = {}
     app.state.decisions = {}
+    app.state.invalidated_decisions = {}
 
     @app.post('/api/decision/evaluate')
     async def decision(inputs: DecisionInput, request: Request):
@@ -77,6 +78,7 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
                 start=inputs.start, horizon_hours=inputs.horizon_hours, duration_hours=inputs.duration_hours,
                 include_conditional=inputs.include_conditional, ranking=inputs.ranking)
             app.state.decisions[inputs.analysis_run_id] = result
+            app.state.invalidated_decisions.pop(inputs.analysis_run_id, None)
             return result
         except (ValueError, OSError, TypeError, KeyError):
             return JSONResponse({'error': 'DECISION_INPUT_OR_REVIEW_INVALID'}, status_code=422)
@@ -171,7 +173,19 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
     @app.get('/api/session')
     async def session():
         active_analysis_id = next(iter(app.state.analyses), None)
+        saved = app.state.decisions.get(active_analysis_id)
+        if saved:
+            from .decision_engine import input_fingerprint
+            try:
+                current = input_fingerprint(list_reviews(root, app.state.analyses[active_analysis_id]),
+                    app.state.environmental_results.get(active_analysis_id))
+            except (ValueError, OSError, KeyError, TypeError):
+                current = None
+            if current is None or saved.get('audit', {}).get('input_fingerprint') != current:
+                app.state.invalidated_decisions[active_analysis_id] = saved.get('assessment_id')
+                app.state.decisions.pop(active_analysis_id, None)
         return {'boot_id': app.state.boot_id, 'mode': 'MOCK' if transport else 'LIVE',
+                'invalidated_assessment_id':app.state.invalidated_decisions.get(active_analysis_id),
                 'provider_status': provider_status(), 'environmental_capabilities': capability_matrix(),
                 'decision_result': app.state.decisions.get(active_analysis_id),
                 'environmental_result': app.state.environmental_results.get(active_analysis_id)}

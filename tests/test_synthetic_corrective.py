@@ -98,14 +98,16 @@ def test_unresolved_quotes_fail_closed(quote):
 
 
 @pytest.mark.parametrize('provider,implemented',[('EXTERNAL',True),('UNAVAILABLE',False),('ERA5',True),('CDS',True),('CAMS',True),('COPERNICUS_MARINE',False)])
-def test_non_mvp_capabilities_never_gate(provider,implemented):
+def test_required_numerical_capability_failure_remains_gating(provider,implemented):
     reviews,env=fixture();row=deepcopy(reviews['requirements'][0])
     row['target_id']='environmental_requirement-1-extra';row['mapping'][0]['requirement_index']=1
     row['mapping'][0]['routing'].update(preferred_provider=provider,implemented=implemented)
     reviews['requirements'].append(row)
     result=run(reviews,env)['current_assessment']
-    assert result['status']=='WORK'
-    assert next(r for r in result['rule_results'] if r['requirement_id']==row['target_id'])['gating'] is False
+    assert result['status']=='UNKNOWN'
+    blocked=next(r for r in result['rule_results'] if r['requirement_id']==row['target_id'])
+    assert blocked['gating'] is True
+    assert blocked['reason_code'] in {'EXTERNAL_EVIDENCE_REQUIRED','EVIDENCE_UNSUPPORTED','NO_WAVE_EVIDENCE'}
 
 
 @pytest.mark.parametrize('variable',['significant_wave_height','wind_gust'])

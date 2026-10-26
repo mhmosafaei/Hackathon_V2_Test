@@ -37,7 +37,7 @@ def test_atmospheric_reanalysis_remains_era5():
 
 
 def test_direction_derivation_is_towards_clockwise_from_north():
-    from src.environmental.service import project_current_or_wave_evidence
+    from src.environmental.copernicus import project_current_or_wave_evidence
     evidence = {"points": [{"component_values": {"uo": 1.0, "vo": 0.0}}]}
     result = project_current_or_wave_evidence(evidence, "surface_current_direction", "current_direction")
     assert result["points"][0]["raw_value"] == pytest.approx(90.0)
@@ -46,7 +46,8 @@ def test_direction_derivation_is_towards_clockwise_from_north():
 def test_wave_direction_is_provider_defined():
     routed = route("mean_wave_direction", "reanalysis")
     assert routed["preferred_provider"] == "COPERNICUS_MARINE"
-    assert "provider-defined" in routed["notes"]
+    from src.environmental.capabilities import capability_for
+    assert "provider-defined" in capability_for("mean_wave_direction")["notes"]
 
 
 def test_turbidity_fnu_maps_to_tur_without_conversion():

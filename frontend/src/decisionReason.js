@@ -46,8 +46,11 @@ export function decisionExplanation(assessment, fallback = '', payload) {
   if (assessment?.status === 'UNKNOWN') {
     const issues = new Set();
     const categories = {
+      APPLICABILITY_UNASSESSED:'applicability is unassessed', REVIEW_REQUIRED:'human review is pending',
+      REVIEW_REJECTED_UNRESOLVED:'interpretation was rejected and remains unresolved', REVIEW_CONFLICT:'review provenance conflicts',
+      SOURCE_UNVERIFIED:'source verification is required', INTERPRETATION_REQUIRED:'threshold interpretation requires review',
       EVIDENCE_MISSING:'data is unavailable', NO_WAVE_EVIDENCE:'data is unavailable',
-      EVIDENCE_STALE:'data is stale', STALE_OXYGEN_EVIDENCE:'data is stale', STALE_WAVE_EVIDENCE:'data is stale',
+      EVIDENCE_STALE:'data is stale', STALE_OXYGEN_EVIDENCE:'data is stale', STALE_WAVE_EVIDENCE:'data is stale', STALE_TURBIDITY_EVIDENCE:'data is stale',
       TEMPORAL_COVERAGE_INSUFFICIENT:'does not cover this interval', FORECAST_COVERAGE_INSUFFICIENT:'does not cover this interval',
       SPATIAL_COVERAGE_INSUFFICIENT:'spatial coverage is insufficient', UNIT_INCOMPATIBLE:'unit is incompatible',
       DEPTH_UNSATISFIED:'depth is incompatible or unresolved', NO_COMPATIBLE_OXYGEN_SOURCE:'compatible source is unavailable',

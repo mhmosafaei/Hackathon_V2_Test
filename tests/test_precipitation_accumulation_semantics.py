@@ -22,6 +22,7 @@ def _requirement():
         'condition_id': '34', 'canonical_variable': 'precipitation',
         'requirement_text': 'Hourly accumulated precipitation greater than 5 mm in a one-hour interval',
         'operator': '>', 'threshold': 5.0, 'unit': 'mm per hour', 'explicit_requirement': True,
+        'evidence_type': 'forecast',
         'source_verified': True,
         'source_spans': [{'page': 5, 'quotation':
             'Hourly accumulated precipitation greater than 5 mm in a one-hour interval.'}],

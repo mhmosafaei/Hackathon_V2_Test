@@ -51,6 +51,9 @@ def _evidence(request, retrieved_at="2026-10-12T20:00:00+00:00"):
         "distance_km": 0.9,
         "points": [
             {"data_time": "2026-10-12T22:00:00+00:00", "raw_value": 0.3, "unit": "m/s"},
+            {"data_time": "2026-10-12T22:15:00+00:00", "raw_value": 0.3, "unit": "m/s"},
+            {"data_time": "2026-10-12T22:30:00+00:00", "raw_value": 0.3, "unit": "m/s"},
+            {"data_time": "2026-10-12T22:45:00+00:00", "raw_value": 0.3, "unit": "m/s"},
             {"data_time": "2026-10-12T23:00:00+00:00", "raw_value": 0.4, "unit": "m/s"},
         ],
     }

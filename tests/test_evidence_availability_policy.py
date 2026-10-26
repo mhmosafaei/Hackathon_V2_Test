@@ -7,7 +7,7 @@ from src.permit.decision_engine import evaluate_requirement
 
 
 @pytest.mark.parametrize('failure', ['missing','stale','unit','provider','timestamp','unsupported'])
-def test_unavailable_turbidity_excluded_not_pass_or_blocker(failure):
+def test_unavailable_mandatory_turbidity_fails_closed(failure):
     reviews, env=fixture('turbidity',unit='FNU',threshold=25)
     evidence=env['requirements'][0]['evidence']
     evidence['data_type']='SATELLITE_OBSERVATION'
@@ -23,12 +23,12 @@ def test_unavailable_turbidity_excluded_not_pass_or_blocker(failure):
     before=deepcopy((reviews,env))
     result=run(reviews,env)
     rule=result['current_assessment']['rule_results'][0]
-    assert rule['status']=='UNKNOWN' and rule['gating'] is False
-    assert rule['availability_policy']=='AVAILABLE_EVIDENCE_ONLY_MVP'
-    assert 'excluded from MVP' in rule['explanation']
+    assert rule['status']=='UNKNOWN' and rule['gating'] is True
+    assert rule['mvp_evidence_excluded'] is True
     assert result['current_assessment']['status']=='WORK'
-    assert result['evidence_gaps']==[]
-    assert result['candidate_windows']
+    assert not result['evidence_gaps']
+    assert result['current_assessment']['warnings']
+    assert not result['candidate_windows'] or result['candidate_windows'][0]['status']=='WORK'
     assert (reviews,env)==before
 
 
@@ -40,7 +40,7 @@ def test_available_turbidity_still_gates(value,state):
     assert result['status']==state and result['rule_results'][0]['gating']
 
 
-@pytest.mark.parametrize('value,present,state',[(1,False,'UNKNOWN'),(3,True,'STOP'),(1,True,'WORK')])
+@pytest.mark.parametrize('value,present,state',[(1,False,'UNKNOWN'),(3,True,'STOP'),(1,True,'UNKNOWN')])
 def test_other_gating_constraints_unchanged_when_turbidity_missing(value,present,state):
     reviews,env=fixture(value=value)
     tr,te=fixture('turbidity',unit='FNU',threshold=25)
@@ -50,7 +50,56 @@ def test_other_gating_constraints_unchanged_when_turbidity_missing(value,present
     for m in row['mapping']: m['requirement_index']=1
     reviews['requirements'].append(row)
     if not present: env['requirements'][0].pop('evidence')
-    assert run(reviews,env)['current_assessment']['status']==state
+    # The turbidity row is excluded only when its own evidence is unavailable;
+    # the independent source row retains normal STOP/UNKNOWN semantics.
+    expected = 'STOP' if value == 3 else 'UNKNOWN' if not present else 'WORK'
+    assert run(reviews,env)['current_assessment']['status']==expected
+
+
+def test_missing_turbidity_plus_other_unknown_remains_unknown():
+    reviews, env = fixture()
+    tr, te = fixture('turbidity', unit='FNU', threshold=25)
+    row = tr['requirements'][0]
+    row['target_id'] = 'environmental_requirement-1-turbidity'
+    row['condition_id'] = 'turbidity-source'
+    for mapping in row['mapping']:
+        mapping['requirement_index'] = 1
+    reviews['requirements'].append(row)
+    env['requirements'].append({**te['requirements'][0], 'requirement_index': 1})
+    env['requirements'][1].pop('evidence')
+    reviews['requirements'][0]['applicability'] = 'UNASSESSED'
+    result = run(reviews, env)
+    assert result['current_assessment']['status'] == 'UNKNOWN'
+    assert any(r['reason_code'] == 'APPLICABILITY_UNASSESSED' for r in result['evidence_gaps'])
+
+
+def test_missing_turbidity_with_passing_numerical_gate_is_work_with_warning():
+    reviews, env = fixture()
+    tr, te = fixture('turbidity', unit='FNU', threshold=25)
+    row = tr['requirements'][0]
+    row['target_id'] = 'environmental_requirement-1-turbidity'
+    row['condition_id'] = 'turbidity-source'
+    for mapping in row['mapping']:
+        mapping['requirement_index'] = 1
+    reviews['requirements'].append(row)
+    env['requirements'].append({**te['requirements'][0], 'requirement_index': 1})
+    env['requirements'][1].pop('evidence')
+    result = run(reviews, env)
+    assert result['current_assessment']['status'] == 'WORK'
+    assert result['current_assessment']['warnings'] == [
+        'Turbidity evidence unavailable — excluded from MVP decision under the evidence-availability policy. This is not a passing turbidity result or authorization to work.'
+    ]
+
+
+def test_missing_turbidity_does_not_override_wave_stop():
+    reviews, env = fixture(value=3)
+    tr, te = fixture('turbidity', unit='FNU', threshold=25)
+    row = tr['requirements'][0]
+    row['target_id'] = 'environmental_requirement-1-turbidity'; row['condition_id'] = 'turbidity-source'
+    for mapping in row['mapping']: mapping['requirement_index'] = 1
+    reviews['requirements'].append(row); env['requirements'].append({**te['requirements'][0], 'requirement_index': 1})
+    env['requirements'][1].pop('evidence')
+    assert run(reviews, env)['current_assessment']['status'] == 'STOP'
 
 
 @pytest.mark.parametrize('variable',['surface_current_speed','eastward_current','northward_current'])

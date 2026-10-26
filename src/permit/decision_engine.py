@@ -18,10 +18,24 @@ from src.documents.quote_verifier import normalise
 
 DISCLAIMER = ('Advisory evidence/constraint assessment only. This is not regulatory approval, legal compliance, '
               'vessel-master approval, permit-to-work authorization, or safe-to-work certification.')
+DECISION_VERSION = 'fail-closed-required-v2-diagnostics'
+
+
+def input_fingerprint(review_data, environment):
+    return sha256(json.dumps({'version':DECISION_VERSION, 'reviews':review_data,
+        'environment':environment}, sort_keys=True, default=str).encode()).hexdigest()
 EXPLANATIONS = {'WORK': 'All applicable evaluated operational constraints pass with sufficient evidence for this interval.',
                 'STOP': 'One or more reviewed operational constraints are triggered.',
                 'UNKNOWN': 'The available reviewed rules and evidence are insufficient to establish a WORK assessment.'}
+TURBIDITY_MVP_EXCLUDED_CODES = {'EVIDENCE_MISSING', 'EVIDENCE_STALE', 'STALE_TURBIDITY_EVIDENCE',
+                                'TEMPORAL_COVERAGE_INSUFFICIENT',
+                                'NO_COMPATIBLE_ACCESSIBLE_SOURCE', 'CONFIGURED_DATASET_UNAVAILABLE',
+                                'PROVIDER_FAILURE', 'EVIDENCE_UNSUPPORTED'}
+TURBIDITY_MVP_WARNING = ('Turbidity evidence unavailable — excluded from MVP decision under the '
+                         'evidence-availability policy. This is not a passing turbidity result '
+                         'or authorization to work.')
 NEXT_ACTIONS = {'REVIEW_REQUIRED': 'Complete Human Review.', 'REVIEW_REJECTED_UNRESOLVED': 'Resolve the rejected interpretation in Human Review.',
+                'REVIEW_CONFLICT':'Resolve the review fingerprint/provenance conflict before assessment.',
                 'APPLICABILITY_UNASSESSED': 'Explicitly assess applicability in Human Review.',
                 'SOURCE_UNVERIFIED': 'Verify the original source quotation and physical page.',
                 'EVIDENCE_MISSING': 'Use an explicit Environmental Fetch for the confirmed location and UTC period.',
@@ -32,6 +46,12 @@ NEXT_ACTIONS = {'REVIEW_REQUIRED': 'Complete Human Review.', 'REVIEW_REJECTED_UN
                 'TEMPORAL_COVERAGE_INSUFFICIENT': 'Resolve native validity, cadence, or timing coverage.',
                 'SPATIAL_COVERAGE_INSUFFICIENT': 'Resolve model-point and geographic representativeness.',
                 'EVIDENCE_STALE': 'Obtain fresh evidence through a separate explicit action.',
+                'STALE_WAVE_EVIDENCE':'Select native Hs evidence within the configured 90-minute policy; do not extend sample validity.',
+                'NO_WAVE_EVIDENCE':'Obtain compatible native Hs evidence for the assessed instant through explicit Fetch.',
+                'STALE_OXYGEN_EVIDENCE':'Obtain compatible modelled oxygen evidence at the required depth within the 24-hour zero-depth policy.',
+                'NO_COMPATIBLE_OXYGEN_SOURCE':'Resolve the source-backed oxygen depth and compatible evidence availability.',
+                'STALE_TURBIDITY_EVIDENCE':'Obtain compatible FNU evidence within the 72-hour policy; no timestamp or unit substitution.',
+                'NO_COMPATIBLE_ACCESSIBLE_SOURCE':'Inspect provider availability and obtain compatible FNU evidence; do not substitute NTU.',
                 'PROVIDER_FAILURE': 'Inspect the existing provider diagnostic.',
                 'EVIDENCE_UNSUPPORTED': 'A verified supported evidence mapping or external evidence workflow is required.'}
 
@@ -48,7 +68,7 @@ def stamp(value):
 
 
 def aggregate(results):
-    states = [r['status'] for r in results if r['gating']]
+    states = [r['status'] for r in results if r.get('gating') and not r.get('mvp_evidence_excluded')]
     return 'STOP' if 'STOP' in states else 'UNKNOWN' if 'UNKNOWN' in states or not states else 'WORK'
 
 
@@ -227,21 +247,22 @@ def evaluate_requirement(row, environment, start, end, now, linked):
     def finish(code, message, status='UNKNOWN'):
         result.update(reason_code=code, explanation=message, status=status,
                       required_action=NEXT_ACTIONS.get(code, 'Inspect the reviewed source and assessment explanation.' if status == 'UNKNOWN' else 'No additional interpretation action for this result.'))
-        # Explicit MVP availability policy, not a passing threshold result.
-        # Review/source/interpretation blockers are deliberately not waived.
-        availability_codes = {'EVIDENCE_MISSING', 'EVIDENCE_STALE', 'EVIDENCE_UNSUPPORTED',
-            'PROVIDER_FAILURE', 'NO_COMPATIBLE_ACCESSIBLE_SOURCE', 'STALE_TURBIDITY_EVIDENCE',
-            'TEMPORAL_COVERAGE_INSUFFICIENT', 'FORECAST_COVERAGE_INSUFFICIENT',
-            'SPATIAL_COVERAGE_INSUFFICIENT', 'UNIT_INCOMPATIBLE', 'DEPTH_UNSATISFIED'}
-        if (status == 'UNKNOWN' and result['gating'] and row['kind'] == 'environmental_requirement'
-                and canonical(effective.get('canonical_variable')) == 'turbidity' and code in availability_codes):
-            result['gating'] = False
-            result['availability_policy'] = 'AVAILABLE_EVIDENCE_ONLY_MVP'
-            result['availability_diagnostic'] = message
-            state = 'stale' if code in {'STALE_TURBIDITY_EVIDENCE', 'EVIDENCE_STALE'} else 'unavailable'
-            result['explanation'] = f'Turbidity evidence {state} — excluded from MVP work-window decision for this interval. ' + message
+        result['classification'] = 'REQUIRED' if result['gating'] else 'NON_GATING'
+        if (status == 'UNKNOWN' and code in TURBIDITY_MVP_EXCLUDED_CODES and
+                canonical(effective.get('canonical_variable') or raw.get('canonical_variable')) == 'turbidity'):
+            result['mvp_evidence_excluded'] = True
+            result['evidence_availability_warning'] = TURBIDITY_MVP_WARNING
+        violations = [v for check in result['checks'] for v in check.get('values', []) if v.get('triggered')]
+        if violations:
+            result['violation_summary'] = {
+                'first_violation_timestamp': min((v['valid_time'] for v in violations), key=utc),
+                'minimum_value': min(v['value'] for v in violations),
+                'maximum_value': max(v['value'] for v in violations),
+                'affected_interval': {'start':stamp(start), 'end':stamp(end)}}
         from .informational_audit import attach_direction_audit
         attach_direction_audit(result, row, environment, start, end)
+        from .decision_diagnostics import attach_requirement_diagnostics
+        attach_requirement_diagnostics(result, row, environment, start, end, now, stored_spatial_suitable)
         return result
 
     if row['kind'] == 'decision_prerequisite':
@@ -256,32 +277,20 @@ def evaluate_requirement(row, environment, start, end, now, linked):
     identity = re.fullmatch(r'environmental_requirement-(\d+)-.+', row['target_id'])
     if identity:
         mappings = [m for m in mappings if m.get('requirement_index') == int(identity[1])]
-    effective_checks = derived_sst_checks({**effective, 'source_verified': result['source_verified']})
-    fetchable = any(m.get('routing', {}).get('preferred_provider') in {'COPERNICUS_MARINE', 'ECMWF_FORECAST'}
-                    and m['routing'].get('implemented') is True for m in mappings)
-    thresholded = bool(effective_checks) and all(c.get('threshold') is not None and c.get('operator') in {'<','<=','>','>=','=','==','!='} for c in effective_checks)
-    eligible = (row['kind'] == 'environmental_requirement' and gating and fetchable and thresholded
-                and row['state'] in {'APPROVED','CORRECTED'} and row['applicability'] == 'APPLICABLE'
-                and not row.get('conflict'))
+    # Scope is a property of the source obligation, never of successful review,
+    # mapping or evidence acquisition. Unresolved required rows must fail closed.
+    eligible = row['kind'] == 'environmental_requirement' and gating
     if not eligible:
-        if (row['kind'] == 'environmental_requirement' and gating and thresholded and not fetchable
-                and canonical(effective.get('canonical_variable')) == 'turbidity'
-                and row['state'] in {'APPROVED','CORRECTED'} and row['applicability'] == 'APPLICABLE'
-                and not row.get('conflict') and result['source_verified']):
-            return finish('EVIDENCE_UNSUPPORTED', 'No compatible configured turbidity source is available.')
         result['gating'] = False
         return finish('OUT_OF_SCOPE_FOR_MVP_DECISION',
-            'Retained for review/audit; not a reviewed applicable fetchable Copernicus/ECMWF numerical constraint. Other legal obligations remain unchanged.', 'WORK')
+            'Retained for review/audit; informational or outside the numerical decision scope. Review, mapping and evidence failures never remove a required numerical gate.', 'WORK')
 
+    result['gating'] = True
     if row.get('conflict'):
         return finish('REVIEW_CONFLICT', 'Review fingerprint or interpretation conflict requires resolution.')
-    if row['applicability'] == 'NOT_APPLICABLE':
+    if row['applicability'] == 'NOT_APPLICABLE' and row['state'] in {'APPROVED','CORRECTED'}:
         result['gating'] = False
         return finish('NOT_APPLICABLE', 'Explicit reviewer applicability decision; retained in audit.', 'WORK')
-    if not gating:
-        unsupported = any(not m['routing']['implemented'] and m['routing']['preferred_provider'] != 'EXTERNAL' for m in row.get('mapping', []))
-        return finish('EVIDENCE_UNSUPPORTED' if unsupported else 'INFORMATIONAL_ONLY',
-                      'Informational or administrative record; it does not independently gate this assessment.', 'WORK')
     if row['state'] == 'UNREVIEWED':
         return finish('REVIEW_REQUIRED', 'Human interpretation review is required.')
     if row['state'] == 'REJECTED':
@@ -301,7 +310,9 @@ def evaluate_requirement(row, environment, start, end, now, linked):
     # Mapping rows preserve requirement_index. Never join separate source obligations
     # merely because their condition numbers or provider variables happen to match.
     mappings = row.get('mapping', [])
-    index = int(row['target_id'].split('-')[1])
+    if identity is None:
+        return finish('EVIDENCE_MISSING', 'Reviewed requirement identity cannot be linked to evidence.')
+    index = int(identity[1])
     mappings = [m for m in mappings if m.get('requirement_index') == index]
     if not mappings:
         return finish('EVIDENCE_UNSUPPORTED', 'No authoritative environmental mapping exists for this requirement.')
@@ -528,12 +539,15 @@ def evaluate_interval(rows, environment, start, end, now):
     linked = {str(r['condition_id']) for r in rows if r['kind'] == 'environmental_requirement' and r['decision_relevant_default']}
     results = [evaluate_requirement(r, environment, start, end, now, linked) for r in rows]
     state = aggregate(results)
-    return {'start': stamp(start), 'end': stamp(end), 'status': state, 'explanation': EXPLANATIONS[state],
-            'primary_reason': next((r['reason_code'] for r in results if r['gating'] and r['status'] == state), 'NO_APPLICABLE_CONSTRAINTS'),
-            'passed_count': sum(r['gating'] and r['kind'] == 'environmental_requirement' and r['status'] == 'WORK' for r in results),
-            'stop_count': sum(r['gating'] and r['status'] == 'STOP' for r in results),
-            'unknown_count': sum(r['gating'] and r['status'] == 'UNKNOWN' for r in results),
-            'evidence_gap_count': sum(r['gating'] and r['status'] == 'UNKNOWN' for r in results), 'rule_results': results}
+    warning = TURBIDITY_MVP_WARNING if any(r.get('mvp_evidence_excluded') for r in results) else None
+    return {'start': stamp(start), 'end': stamp(end), 'status': state,
+            'explanation': EXPLANATIONS[state] + (f' {warning}' if warning else ''),
+            'primary_reason': next((r['reason_code'] for r in results if r.get('gating') and not r.get('mvp_evidence_excluded') and r['status'] == state), 'NO_APPLICABLE_CONSTRAINTS'),
+            'passed_count': sum(r.get('gating') and not r.get('mvp_evidence_excluded') and r['kind'] == 'environmental_requirement' and r['status'] == 'WORK' for r in results),
+            'stop_count': sum(r.get('gating') and not r.get('mvp_evidence_excluded') and r['status'] == 'STOP' for r in results),
+            'unknown_count': sum(r.get('gating') and not r.get('mvp_evidence_excluded') and r['status'] == 'UNKNOWN' for r in results),
+            'evidence_gap_count': sum(r.get('gating') and not r.get('mvp_evidence_excluded') and r['status'] == 'UNKNOWN' for r in results),
+            'warnings': [TURBIDITY_MVP_WARNING] if any(r.get('mvp_evidence_excluded') for r in results) else [], 'rule_results': results}
 
 
 def find_windows(timeline, duration_hours, include_conditional=False, ranking='earliest'):
@@ -560,6 +574,7 @@ def find_windows(timeline, duration_hours, include_conditional=False, ranking='e
                         'type': 'CONDITIONAL' if state == 'UNKNOWN' else 'VERIFIED',
                         'primary_reason': next((i['primary_reason'] for i in group if i['status'] == 'UNKNOWN'), 'CONSTRAINT_PASSED'),
                         'unknown_count': max(i['unknown_count'] for i in group), 'passed_count': min(i['passed_count'] for i in group),
+                        'warnings': [TURBIDITY_MVP_WARNING] if any(TURBIDITY_MVP_WARNING in i.get('warnings', []) for i in group) else [],
                         'stop_count': 0, 'intervals': [{'start': i['start'], 'end': i['end']} for i in group]})
     return sorted(windows, key=(lambda w: (-w['duration_hours'], w['start'])) if ranking == 'longest' else (lambda w: w['start']))
 
@@ -575,6 +590,17 @@ def assess(review_data, environmental_result=None, *, start=None, horizon_hours=
     rows = deepcopy(review_data['requirements'])
     rows.extend(prerequisite_rows(review_data))
     end = start + timedelta(hours=horizon_hours)
+    requested_end = end
+    # Only explicit, consistent request bounds may clip the chosen horizon.
+    request_ends = set()
+    for item in (environment or {}).get('requirements', []):
+        value = (item.get('request') or {}).get('end_time')
+        if value:
+            request_ends.add(utc(value))
+    if len(request_ends) == 1:
+        end = min(end, next(iter(request_ends)))
+    if end <= start:
+        raise ValueError('DECISION_OUTSIDE_CONFIRMED_REQUEST')
     # Use actual timestamps only. Horizon edges mark requested coverage, not samples.
     boundaries = {start, end}
     evidence_rows=(environment or {}).get('requirements', [])
@@ -609,30 +635,53 @@ def assess(review_data, environmental_result=None, *, start=None, horizon_hours=
                 pass
     ordered = sorted(boundaries)
     timeline = [evaluate_interval(rows, environment, a, b, now) for a,b in zip(ordered, ordered[1:])]
-    current_end = start + timedelta(hours=duration_hours)
+    current_end = min(start + timedelta(hours=duration_hours), end)
     current_parts = [evaluate_interval(rows, environment, utc(i['start']), min(utc(i['end']), current_end), now)
                      for i in timeline if utc(i['start']) < current_end]
     combined = []
     for row in rows:
         parts = [r for i in current_parts for r in i['rule_results'] if r['requirement_id'] == row['target_id']]
-        state = 'STOP' if any(r['status'] == 'STOP' for r in parts) else 'UNKNOWN' if any(r['status'] == 'UNKNOWN' for r in parts) else 'WORK'
-        primary = next(r for r in parts if r['status'] == state)
+        state = 'STOP' if any(r.get('gating') and not r.get('mvp_evidence_excluded') and r['status'] == 'STOP' for r in parts) else 'UNKNOWN' if any(r.get('gating') and not r.get('mvp_evidence_excluded') and r['status'] == 'UNKNOWN' for r in parts) else 'WORK'
+        primary = (next((r for r in parts if r['status'] == 'WORK'), None)
+                   if state == 'WORK' else
+                   next(r for r in parts if r['status'] == state and not r.get('mvp_evidence_excluded')))
+        primary = primary or parts[0]
         combined.append({**primary, 'start': stamp(start), 'end': stamp(current_end),
-                         'has_evidence_gap': any(r['gating'] and r['status'] == 'UNKNOWN' for r in parts),
+                         'has_evidence_gap': any(r.get('gating') and not r.get('mvp_evidence_excluded') and r['status'] == 'UNKNOWN' for r in parts),
+                         'warnings': [TURBIDITY_MVP_WARNING] if any(r.get('mvp_evidence_excluded') for r in parts) else [],
                          'interval_results': parts, 'checks': [c for r in parts for c in r['checks']],
                          'evidence_references': [e for r in parts for e in r['evidence_references']]})
+    for combined_rule in combined:
+        if combined_rule.get('diagnostics'):
+            combined_rule['diagnostics'] = deepcopy(combined_rule['diagnostics'])
+            combined_rule['diagnostics']['requested_interval'] = {'start':stamp(start),'end':stamp(current_end)}
+            combined_rule['diagnostics']['threshold_result'] = combined_rule['status'] if combined_rule['checks'] else 'NOT_EVALUATED'
     current_state = aggregate(combined)
+    if (current_end-start).total_seconds() < duration_hours*3600 and current_state != 'STOP':
+        guard = {'requirement_id':'assessment-duration', 'condition_id':'duration', 'kind':'decision_prerequisite',
+            'gating':True, 'status':'UNKNOWN', 'reason_code':'TEMPORAL_COVERAGE_INSUFFICIENT',
+            'explanation':'Confirmed request ends before the required uninterrupted duration.',
+            'effective_rule':{'requirement':'Required uninterrupted duration'}, 'checks':[], 'evidence_references':[],
+            'source_spans':[], 'interval_results':[], 'has_evidence_gap':True,
+            'required_action':'Select a duration supported by the confirmed evidence period.'}
+        guard['interval_results']=[{k:v for k,v in guard.items() if k!='interval_results'}]
+        combined.append(guard)
+        current_state='UNKNOWN'
+    warning = TURBIDITY_MVP_WARNING if any(r.get('mvp_evidence_excluded') for r in combined) else None
     current = {'start': stamp(start), 'end': stamp(current_end), 'status': current_state,
-               'explanation': EXPLANATIONS[current_state], 'rule_results': combined,
-               'passed_count': sum(r['gating'] and r['kind'] == 'environmental_requirement' and r['status'] == 'WORK' for r in combined),
-               'stop_count': sum(r['gating'] and r['status'] == 'STOP' for r in combined),
-               'unknown_count': sum(r['gating'] and r['status'] == 'UNKNOWN' for r in combined),
+               'explanation': EXPLANATIONS[current_state] + (f' {warning}' if warning else ''), 'rule_results': combined,
+               'passed_count': sum(r.get('gating') and not r.get('mvp_evidence_excluded') and r['kind'] == 'environmental_requirement' and r['status'] == 'WORK' for r in combined),
+               'stop_count': sum(r.get('gating') and not r.get('mvp_evidence_excluded') and r['status'] == 'STOP' for r in combined),
+               'unknown_count': sum(r.get('gating') and not r.get('mvp_evidence_excluded') and r['status'] == 'UNKNOWN' for r in combined),
                'evidence_gap_count': sum(r['has_evidence_gap'] for r in combined)}
-    current['primary_reason'] = next((r['reason_code'] for r in combined if r['gating'] and r['status'] == current_state), 'NO_APPLICABLE_CONSTRAINTS')
+    current['warnings'] = [TURBIDITY_MVP_WARNING] if any(r.get('mvp_evidence_excluded') for r in combined) else []
+    current['primary_reason'] = next((r['reason_code'] for r in combined if r.get('gating') and not r.get('mvp_evidence_excluded') and r['status'] == current_state), 'NO_APPLICABLE_CONSTRAINTS')
     windows = find_windows(timeline, duration_hours, include_conditional, ranking)
-    evidence_gaps = [next(p for p in r['interval_results'] if p['gating'] and p['status'] == 'UNKNOWN')
+    evidence_gaps = [next(p for p in r['interval_results'] if p.get('gating') and not p.get('mvp_evidence_excluded') and p['status'] == 'UNKNOWN')
                      for r in combined if r['has_evidence_gap']]
     audit = {'analysis_run_id': review_data['analysis_run_id'], 'document_sha256': review_data['document_sha256'],
+             'decision_version':DECISION_VERSION, 'input_fingerprint':input_fingerprint(review_data,environmental_result),
+             'requested_end':stamp(requested_end), 'clipped_to_confirmed_request':end != requested_end,
              'requested_start': requested_start,
              'assessed_at': stamp(now), 'start': stamp(start), 'end': stamp(end), 'horizon_hours': horizon_hours,
              'duration_hours': duration_hours, 'include_conditional': include_conditional, 'ranking': ranking,

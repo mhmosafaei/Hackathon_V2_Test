@@ -66,6 +66,7 @@ def test_first_48h_results_unchanged_when_72h_native_evidence_added():
                 # Requested coverage provenance necessarily differs; rule
                 # outcomes and evaluated native values must not differ.
                 rule.pop('evidence_references', None)
+                rule.pop('diagnostics', None)  # Inventory count/range reflects the full fetched series.
         return cells
     assert decisions(long_result['timeline']) == decisions(short_result['timeline'])
 

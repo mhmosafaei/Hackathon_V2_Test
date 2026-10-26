@@ -2,7 +2,7 @@ import React from 'react';
 import {render, screen, waitFor, act, fireEvent} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, it, expect, vi, afterEach} from 'vitest';
-import Environmental, {blockerLabel} from './Environmental.jsx';
+import Environmental, {blockerLabel, displayedPointLabel} from './Environmental.jsx';
 import App from './App.jsx';
 
 vi.mock('recharts', async () => {
@@ -18,6 +18,38 @@ const doc = () => ({analysis_id:'fresh', filename:'synthetic-environment.pdf',mo
   summary:{permit_number:'TEST-ENV'},conditions:[],key_limits:[],geofences:[],
   environmental_requirements:[row],environmental_mapping:[row]});
 const session = {boot_id:'boot',mode:'MOCK',provider_status:{COPERNICUS_MARINE:'Credentials required',ECMWF_FORECAST:'Public endpoint configured · connection not tested'}};
+
+it.each(['wind_direction_10m','mean_wave_direction','surface_current_direction','another_informational_variable'])('generic valid informational %s including zero',variable=>{
+  const check={threshold:null,status:'INFORMATIONAL',evidence:{canonical_variable:variable,temporal_coverage_status:'COVERED',points:[{raw_value:0,status:'INFORMATIONAL',validation_notes:[]}]}};
+  expect(displayedPointLabel(check)).toBe('INFORMATIONAL');
+  for(const value of [null,undefined,NaN,Infinity,'249',false]) expect(displayedPointLabel({...check,evidence:{...check.evidence,points:[{raw_value:value,status:'INFORMATIONAL'}]}})).toBe('NOT DETERMINED');
+  expect(displayedPointLabel({...check,evidence:{...check.evidence,temporal_coverage_status:'PARTIAL'}})).toBe('NOT DETERMINED');
+  expect(displayedPointLabel({...check,evidence:{...check.evidence,validation_notes:['incompatible']}})).toBe('NOT DETERMINED');
+  expect(displayedPointLabel({...check,status:'INSUFFICIENT_DATA'})).toBe('NOT DETERMINED');
+  expect(displayedPointLabel({...check,evidence:null})).toBe('NOT DETERMINED');
+  expect(displayedPointLabel({...check,threshold:1,evidence:{points:[{comparison:true}]}})).toBe('TRIGGERED');
+});
+
+it('renders valid wind direction 249 degrees as informational without duplicating evidence',()=>{
+  vi.stubGlobal('fetch',vi.fn());
+  const wind={...row,condition_id:'8',canonical_variable:'wind_direction_10m',status:'INFORMATIONAL',threshold:null,operator:null,unit:'degrees',
+    evidence:{canonical_variable:'wind_direction_10m',temporal_coverage_status:'COVERED',validation_notes:[],points:[{data_time:'2026-10-25T00:00:00Z',raw_value:249,unit:'°',comparison:null,status:'INFORMATIONAL',validation_notes:[]}]}};
+  wind.checks=[{...wind}];
+  render(<Environmental analysis={doc()} session={{...session,environmental_result:{analysis_id:'fresh',requirements:[wind],evidence_groups:[wind]}}}/>);
+  expect(screen.getByTestId('threshold-check')).toHaveTextContent('Displayed point: INFORMATIONAL');
+  expect(screen.getAllByTestId('evidence-card')).toHaveLength(1);
+  expect(screen.queryByTestId('unavailable-requirement')).toBeNull();
+});
+
+it.each(['NO_COMPATIBLE_ACCESSIBLE_SOURCE','STALE_TURBIDITY_EVIDENCE','PROVIDER_RUNTIME'])('evidence-less turbidity %s remains auditable with no value or pass',category=>{
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  const failed={...row,condition_id:'14',canonical_variable:'turbidity',unit:'FNU',provider_diagnostic:{provider_error_category:category,provider_error_message:'Safe retained diagnostic',dataset_id:'configured-turbidity',variable:'TUR'}};
+  render(<Environmental analysis={doc()} session={{...session,environmental_result:{analysis_id:'fresh',requirements:[failed],evidence_groups:[]}}}/>);
+  const card=screen.getByTestId('unavailable-requirement');
+  expect(card).toHaveTextContent(category);expect(card).toHaveTextContent('Safe retained diagnostic');
+  expect(card).toHaveTextContent('mandatory requirement remains UNKNOWN');expect(card).not.toHaveTextContent(/PASS|WITHIN THRESHOLD/);
+  expect(screen.queryByTestId('evidence-card')).toBeNull();expect(fetch).not.toHaveBeenCalled();
+});
 
 it.each([['2026-10-15T00:00',true],['2026-10-16T00:00',true],['2026-10-16T00:01',false],['2026-10-12T00:00',false]])('validates UTC fetch end %s against shared 72-hour maximum',async(end,allowed)=>{
   const fetch=vi.fn().mockResolvedValue({ok:true,json:async()=>({requirements:[row]})});vi.stubGlobal('fetch',fetch);
@@ -38,6 +70,8 @@ it('displays informational wave convention and derived current direction without
   const current={...row,condition_id:'12',canonical_variable:'surface_current_direction',operator:null,threshold:null,unit:'degrees',status:'INFORMATIONAL',
     evidence:{canonical_variable:'surface_current_direction',points:[{raw_value:0,unit:'degrees',data_time:'2026-10-14T00:00:00Z',component_values:{uo:0,vo:1},derivation:{method:'ATAN2_U_V_TOWARDS_CLOCKWISE_FROM_NORTH'}}],direction_convention:'TOWARDS_CLOCKWISE_FROM_NORTH'}};
   current.checks=[{condition_id:'12',threshold:null,status:'INFORMATIONAL',evidence:current.evidence}];
+  current.evidence.temporal_coverage_status='COVERED';
+  current.evidence.points[0].status='INFORMATIONAL';
   render(<Environmental analysis={doc()} session={{...session,environmental_result:{analysis_id:'fresh',requirements:[wave,current],evidence_groups:[wave,current]}}}/>);
   expect(screen.getByText(/Mean wave direction from/)).toBeTruthy();
   expect(screen.getByTestId('current-direction-details')).toHaveTextContent('DERIVED FROM COPERNICUS U/V');
@@ -206,7 +240,7 @@ describe('environmental evidence view', () => {
     await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
     await waitFor(()=>expect(screen.getAllByTestId('environment-row')).toHaveLength(2));
     await userEvent.click(screen.getAllByText('Source and retrieval notes')[0]);
-    expect(screen.getByText(/Provider unit FNU is not comparable/)).toBeVisible();
+    expect(screen.getAllByText(/Provider unit FNU is not comparable/).some(node=>node.closest('[data-testid="unavailable-requirement"]'))).toBe(true);
     expect(screen.queryAllByTestId('evidence-card')).toHaveLength(0);
   });
   it('commits native datetime input events before constructing the UTC request', async () => {

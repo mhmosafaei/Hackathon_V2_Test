@@ -128,11 +128,11 @@ export default function App() {
     try {
       const response = await fetch('/api/analyze', {method: 'POST', headers: {'Content-Type': 'application/pdf', 'X-Filename': encodeURIComponent(file.name), 'X-Session-Id': session.boot_id}, body: file});
       if (!response.ok) {
-        const detail = await response.json().catch(() => ({}));
+        const detail = typeof response.json === 'function' ? await response.json().catch(() => ({})) : {};
         if (detail.error === 'EXTRACTION_INCOMPLETE') {
           throw new Error(`Environmental extraction incomplete: ${detail.extracted_count || 0} of ${detail.candidate_count || 0} candidate requirements extracted. Re-analysis or human review is required.`);
         }
-        throw new Error('analysis failed');
+        throw new Error('Permit analysis could not be completed.');
       }
       const result = await response.json();
       if (ticket !== generation.current) return;
@@ -145,7 +145,7 @@ export default function App() {
   }
   return <div className="app"><header className="header"><div className="brand"><img className="brand-symbol" src={brandLogo} alt=""/><div><img className="brand-wordmark" src={brandWordmark} alt="PermitPulse"/><span>AI-Powered Maritime Permit Intelligence</span></div></div><button className="button secondary" onClick={reset} disabled={status === 'loading'}><Plus size={16}/> New Analysis</button></header>
     <main><nav className="intelligence-tabs" aria-label="Intelligence views"><button aria-pressed={tab === 'permit'} onClick={() => setTab('permit')}>Permit Intelligence</button><button aria-pressed={tab === 'environment'} onClick={() => setTab('environment')}>Environmental Intelligence</button><button aria-pressed={tab === 'review'} onClick={() => setTab('review')}>Human Review</button><button aria-pressed={tab === 'decision'} onClick={() => setTab('decision')}>Decision & Work Windows</button></nav>
-    {tab === 'decision' && <DecisionWorkWindows key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} onEvaluated={decision=>setSession(previous=>previous ? {...previous,decision_result:decision} : previous)} onReview={id=>{setReviewTarget(id);setTab('review');}}/>}
+    {tab === 'decision' && <DecisionWorkWindows key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} onEvaluated={decision=>setSession(previous=>previous ? {...previous,decision_result:decision,invalidated_assessment_id:null} : previous)} onReview={id=>{setReviewTarget(id);setTab('review');}}/>}
     {tab === 'review' && <HumanReview key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} initialTargetId={reviewTarget}/>}
     <div hidden={tab !== 'environment'}><Environmental key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session}/></div>
     <div hidden={tab !== 'permit'}>{currentAnalysis ? <Results analysis={currentAnalysis}/> : <>

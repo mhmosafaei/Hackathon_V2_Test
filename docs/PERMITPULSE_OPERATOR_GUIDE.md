@@ -166,7 +166,7 @@ The navigator may show a general condition and environmental copy with the same 
 
 Precedence is **STOP > UNKNOWN > WORK** for actual gates. STOP names triggered constraints; UNKNOWN names blockers, such as “Insufficient evidence: Dissolved oxygen data is stale; Surface current speed data is unavailable.” Detailed codes/provenance remain auditable.
 
-Fresh compatible turbidity can STOP. Missing/stale/incompatible turbidity is separately excluded from MVP aggregation, **not marked PASS**. Source/review/interpretation safeguards are not bypassed.
+Fresh compatible turbidity can STOP. Missing/stale/incompatible turbidity remains an auditable UNKNOWN evidence status, but is excluded from MVP F09 aggregation under the evidence-availability policy. It is not PASS and is not authorization to work. Source/review/interpretation safeguards are not bypassed.
 
 Mean wave, wind and current directions are informational, not independent gates. Current direction derives from compatible U/V as **TOWARDS, clockwise from true north**; mean wave direction retains its provider convention.
 
@@ -183,7 +183,7 @@ A WORK candidate is an evidence-assessment result, not regulatory approval, comp
 | Evidence | Current policy |
 |---|---|
 | Significant wave height | Newest compatible native sample at/before assessment instant, max **90 min**; no interpolation or hold beyond expiry. |
-| Turbidity | Compatible **FNU**, max **72h**; fresh evidence gates, missing/stale/incompatible evidence excluded but auditable. No NTU=FNU assumption. |
+| Turbidity | Compatible **FNU**, max **72h**; fresh evidence gates; missing/stale/incompatible evidence remains UNKNOWN and auditable but is excluded from MVP aggregation. No NTU=FNU assumption. |
 | Dissolved oxygen | For explicit **0 m** model level, max **24h**, conservative 0.5 m depth tolerance; modelled, not in-situ. Missing/stale evidence blocks when applicable. |
 | Currents | Existing analysis/forecast product; compatible future `MODEL_FORECAST` native values accepted with grid/time provenance. No fabricated extrapolation. |
 | Weather | ECMWF via Open-Meteo forecast/model evidence; timestamps/grid qualification retained. Precipitation requires verified hourly accumulation. |
@@ -202,7 +202,7 @@ These are explicit PermitPulse policies, not provider-declared continuous validi
 | Missing location/time | Enter both coordinates and confirmed UTC start/end; date-only permit wording is not operational time. |
 | Depth incompatible | Check source-required depth/model level. Zero is valid, blank absent; do not widen tolerance or substitute levels. |
 | Provider unavailable/skipped | Inspect safe diagnostic, credentials, dataset/time coverage and per-click cap. Do not substitute unverified sources. |
-| Stale evidence | Check native timestamp and age at assessment time, not only retrieval time. Hs/DO can block; unavailable turbidity is excluded, not passed. |
+| Stale evidence | Check native timestamp and age at assessment time, not only retrieval time. Hs/DO can block; unavailable turbidity remains UNKNOWN evidence and is excluded from MVP aggregation, not passed. |
 | UNKNOWN | Read named source/review, unit/depth, time/position or coverage blocker. Do not infer missing evidence. |
 | No candidate windows | Inspect STOP/UNKNOWN, duration and coverage. Conditional inclusion shows unresolved runs; it does not turn them into WORK. |
 | Analyze disabled/not started | Select PDF, wait for session, check backend/port and model/key setup. Avoid repeated paid submissions. |
@@ -218,7 +218,7 @@ These are explicit PermitPulse policies, not provider-declared continuous validi
 - WGS84 point, longitude sign, UTC period and applicable depth confirmed.
 - Explicit Environmental Fetch completed; provider evidence/provenance visible.
 - Decision evaluated; horizon/duration match displayed audit.
-- Candidate windows inspected if available; UNKNOWN/exclusions understood.
+- Candidate windows inspected if available; UNKNOWN blockers understood.
 - No stale bundle; WORK presented as advisory, not permission to operate.
 
 Return to the [main README](../README.md).

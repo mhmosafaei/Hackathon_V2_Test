@@ -80,7 +80,10 @@ def test_narrow_water_spatial_survives_strict_response_persistence_and_api(tmp_p
     assert response.status_code == 200 and calls == [1]
     body = response.json()
     saved = json.loads(next((tmp_path/'cache/simple_analysis').rglob('analysis.json')).read_text())
-    assert body == saved == app.state.analyses[body['analysis_id']]
+    # The API adds active-session metadata after the immutable analysis artifact
+    # is written; compare the persisted payload after removing those fields.
+    persisted_view = {k: v for k, v in body.items() if k not in {'document_sha256', 'restored_from_persistence'}}
+    assert persisted_view == saved == app.state.analyses[body['analysis_id']]
     context = body['spatial_context'][0]
     assert context['coordinates_original'] == 'IGR 312890E 319096N'
     assert context['northing'] == 319096 and context['source_page'] == 1

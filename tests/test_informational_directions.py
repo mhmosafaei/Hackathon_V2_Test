@@ -26,6 +26,7 @@ def waves():
 
 @pytest.mark.parametrize('alias,expected',[
     ('wave_direction_degrees','mean_wave_direction'),
+    ('current_direction_towards_true_north','surface_current_direction'),
     ('current_direction_degrees_towards_true_north','surface_current_direction')])
 def test_actual_alias_reaches_existing_implemented_path(alias,expected):
     assert canonical(alias)==expected
@@ -90,7 +91,8 @@ def test_separate_or_missing_component_records_are_not_joined():
     assert all(point['raw_value'] is None for point in result['points'])
 
 
-def test_aliases_are_informational_and_current_direction_reuses_one_uv_bundle(tmp_path,monkeypatch):
+@pytest.mark.parametrize('direction_alias',['current_direction_degrees_towards_true_north','current_direction_towards_true_north'])
+def test_aliases_are_informational_and_current_direction_reuses_one_uv_bundle(tmp_path,monkeypatch,direction_alias):
     calls=[]
     class Client:
         def open_dataset(self,**kwargs):
@@ -99,7 +101,7 @@ def test_aliases_are_informational_and_current_direction_reuses_one_uv_bundle(tm
     monkeypatch.setattr(copernicus,'_load_worker_dependencies',lambda:(np,Client()))
     raw=[requirement(alias,condition_id=str(i),threshold=None,operator=None,unit='degrees',depth_requirement=None,
         source_spans=[{'page':1,'quotation':'Direction in degrees is informational only.'}]) for i,alias in enumerate([
-            'wave_direction_degrees','current_direction_degrees_towards_true_north'])]
+            'wave_direction_degrees',direction_alias])]
     raw.append(requirement('eastward_current',condition_id='u',unit='m/s',threshold=.6,operator='>',depth_requirement=None,
         source_spans=[{'page':1,'quotation':'Absolute eastward current greater than 0.6 m/s.'}]))
     before=deepcopy(raw)

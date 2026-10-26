@@ -71,7 +71,7 @@ def test_triggered_wave_or_gust_stop(variable):
 def test_review_gates(field,value,code):
     reviews,env=fixture();reviews['requirements'][0][field]=value
     result=run(reviews,env)['current_assessment']
-    assert result['status']=='WORK' and result['rule_results'][0]['reason_code']=='OUT_OF_SCOPE_FOR_MVP_DECISION'
+    assert result['status']=='UNKNOWN' and result['rule_results'][0]['reason_code']==code
 
 
 def test_not_applicable_and_informational_never_stop():
@@ -85,7 +85,7 @@ def test_not_applicable_and_informational_never_stop():
 def test_stop_precedes_unknown_and_missing_evidence():
     reviews,env=fixture(value=3);extra=deepcopy(reviews['requirements'][0]);extra.update(target_id='unreviewed',state='UNREVIEWED')
     reviews['requirements'].append(extra)
-    result=run(reviews,env)['current_assessment'];assert result['status']=='STOP' and result['unknown_count']==0
+    result=run(reviews,env)['current_assessment'];assert result['status']=='STOP' and result['unknown_count']==1
     assert run(reviews,None)['current_assessment']['status']=='UNKNOWN'
 
 
@@ -110,10 +110,7 @@ def test_invalid_evidence_unknown(mutation,code):
     elif mutation=='missing':env['requirements'][0].pop('evidence')
     elif mutation=='coverage':ev['points']=ev['points'][:2]
     result=run(reviews,env)['current_assessment']
-    if mutation=='unsupported':
-        assert result['status']=='WORK' and result['rule_results'][0]['reason_code']=='OUT_OF_SCOPE_FOR_MVP_DECISION'
-    else:
-        assert result['status']=='UNKNOWN' and result['rule_results'][0]['reason_code']==code
+    assert result['status']=='UNKNOWN' and result['rule_results'][0]['reason_code']==code
 
 
 def test_unsupported_informational_does_not_block_another_passing_rule():
@@ -124,7 +121,7 @@ def test_unsupported_informational_does_not_block_another_passing_rule():
 
 def test_external_evidence_not_satisfied_by_approval():
     reviews,env=fixture();reviews['requirements'][0]['mapping'][0]['routing']['preferred_provider']='EXTERNAL'
-    assert run(reviews,env)['current_assessment']['rule_results'][0]['reason_code']=='OUT_OF_SCOPE_FOR_MVP_DECISION'
+    assert run(reviews,env)['current_assessment']['rule_results'][0]['reason_code']=='EXTERNAL_EVIDENCE_REQUIRED'
 
 
 def test_oxygen_depth_tolerance_preserved():

@@ -11,14 +11,14 @@ class Response:
  def __exit__(self,*args): return False
  def read(self): return json.dumps(self.payload).encode()
 
-def test_ecmwf_request_is_bounded_cached_and_utc(monkeypatch):
+def test_ecmwf_request_is_bounded_cached_and_utc(monkeypatch,tmp_path):
  payload={'latitude':54.6,'longitude':-5.9,'utc_offset_seconds':0,
           'hourly_units':{'time':'iso8601','wind_speed_10m':'km/h'},
           'hourly':{'time':['2026-10-09T00:00','2026-10-09T01:00'],'wind_speed_10m':[1,2]}}
  captured=[]
  def fake(url,timeout): captured.extend([url,timeout]); return Response(payload)
  monkeypatch.setattr(open_meteo,'urlopen',fake)
- cache=Path('tests/fixtures/weather_runtime')
+ cache=tmp_path/'weather_runtime'
  result=open_meteo.fetch_forecast(54.6,-5.9,cache,forecast_days=3,timeout_seconds=9)
  assert result['model']=='ecmwf_ifs025' and result['provenance_label']=='ECMWF IFS via Open-Meteo'
  assert 'models=ecmwf_ifs025' in captured[0] and captured[1]==9

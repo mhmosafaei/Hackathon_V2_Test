@@ -18,8 +18,8 @@ def test_p0_matrix_has_all_fourteen_without_fetching():
     assert {item['implementation_status'] for item in matrix} == {'SUPPORTED', 'PARTIAL', 'UNAVAILABLE'}
     assert {item['canonical_variable'] for item in matrix} >= {
         'significant_wave_height', 'mean_wave_period', 'mean_wave_direction',
-        'eastward_current', 'northward_current', 'surface_current_speed',
-        'current_speed', 'current_direction', 'wind_speed_10m', 'wind_direction_10m',
+        'eastward_current', 'northward_current', 'current_speed', 'current_direction',
+        'wind_speed_10m', 'wind_direction_10m',
         'wind_gust', 'precipitation', 'turbidity', 'visibility', 'air_temperature', 'sea_surface_height'}
 
 

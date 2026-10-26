@@ -26,6 +26,7 @@ ALIASES = {'wave_direction': 'mean_wave_direction', 'wind_speed': 'wind_speed_10
            'northward_current_component_v': 'northward_current',
            'current_v': 'northward_current', 'v current': 'northward_current', 'vo': 'northward_current',
            'current_direction_towards_degrees': 'surface_current_direction',
+           'current_direction_towards_true_north': 'surface_current_direction',
            'current_direction_degrees_towards_true_north': 'surface_current_direction',
            'current_direction_towards': 'surface_current_direction',
            'air_temperature_2m':'air_temperature', 'temperature_2m':'air_temperature',

@@ -60,7 +60,7 @@ Hourly precipitation remains accumulated quantity, not instantaneous rate: numer
 
 Waves, currents and weather can supply native future model/forecast timestamps. The configured current analysis/forecast dataset is `cmems_mod_nws_phy-cur_anfc_1.5km-2D_PT15M-i`, product `NWSHELF_ANALYSISFORECAST_PHY_004_013`. Compatible future current values retain `MODEL_FORECAST` provenance, not observation labels.
 
-Turbidity requires compatible **FNU**; NTU is not FNU, with no automatic conversion. Fresh compatible evidence can gate and STOP. Missing/stale/incompatible evidence remains auditable but is excluded from MVP aggregation, **not marked PASS**.
+Turbidity requires compatible **FNU**; NTU is not FNU, with no automatic conversion. Fresh compatible evidence can gate and STOP. Missing/stale/incompatible FNU evidence remains auditable as UNKNOWN but is excluded from MVP F09 aggregation; this is not a turbidity pass or authorization to work.
 
 Dissolved oxygen is modelled supportive evidence, not equivalent to in-situ monitoring. The current synthetic demo explicitly requests the **0 m sea-surface model level**. Source-backed depth remains variable-scoped, with a conservative **0.5 m** model-level tolerance; arbitrary overrides are not accepted. Other source-required depths remain subject to compatibility checks.
 
@@ -83,12 +83,12 @@ Environmental results are backend-session state associated with an analysis, sep
 Precedence is **STOP > UNKNOWN > WORK** for actual gating constraints:
 
 - **STOP:** an applicable reviewed gating constraint is demonstrably triggered.
-- **UNKNOWN:** no STOP established, but required gating evidence is insufficient/incompatible.
+- **UNKNOWN:** no STOP established, but required gating evidence is insufficient/incompatible. Unavailable turbidity is the documented MVP evidence-availability exception and remains visible as UNKNOWN while excluded from aggregation.
 - **WORK:** all applicable evaluated gating constraints represented in the MVP pass with sufficient evidence for the complete interval.
 
-F09 scope is reviewed, applicable, decision-relevant, implemented Copernicus/ECMWF numerical constraints plus source-backed permit time/position prerequisites. Other obligations remain visible for audit, not legally irrelevant. Thresholds come from reviewed source interpretations.
+F09 evaluates source-backed decision-relevant numerical constraints plus permit time/position prerequisites. Missing review/applicability, mapping or compatible evidence is a blocking UNKNOWN, never an automatic scope exclusion. Only genuinely informational/out-of-scope or explicitly reviewed Not Applicable obligations are non-gating. Thresholds come from reviewed source interpretations.
 
-STOP names triggers: “Triggered constraint: Significant wave height”. UNKNOWN names blockers: “Insufficient evidence: Dissolved oxygen data is stale; Surface current speed data is unavailable.” Detailed codes remain auditable. Excluded turbidity is shown separately.
+STOP names triggers: “Triggered constraint: Significant wave height”. UNKNOWN names blockers: “Insufficient evidence: Dissolved oxygen data is stale; Surface current speed data is unavailable.” Detailed codes remain auditable. Unavailable turbidity remains an explicit UNKNOWN evidence status with a visible MVP exclusion warning.
 
 ### Work-window finder
 
@@ -103,14 +103,14 @@ Without conditional inclusion, candidates require uninterrupted WORK for the sel
 | Evidence | Explicit MVP policy |
 |---|---|
 | Significant wave height | Newest compatible native sample at/before assessment instant; maximum **90 minutes**, with cells bounded by expiry. |
-| Turbidity | Compatible FNU reference evidence; maximum **72 hours**. Unavailable/stale evidence is excluded, not passed. |
+| Turbidity | Compatible FNU reference evidence; maximum **72 hours**. Unavailable/stale/incompatible evidence remains UNKNOWN and auditable, but is excluded from MVP F09 aggregation; it is not passed. |
 | Dissolved oxygen at explicit 0 m | Compatible model evidence; maximum **24 hours**. Missing/stale evidence remains blocking when applicable. |
 
 Original timestamps are retained. These are PermitPulse acceptance policies, **not provider-declared continuous validity intervals**. No interpolation, inferred crossing time or hold beyond expiry. A 72-hour query does not extend recency limits.
 
 ## Future forecast assessment
 
-Select a future UTC period up to 72h, explicitly fetch available configured evidence, then evaluate stored forecasts. Compatible future wave/current/weather values can support candidate assessments. Missing required coverage remains UNKNOWN, subject to the turbidity exception. This is forecast-based evidence assessment, not a safety prediction or authorization.
+Select a future UTC period up to 72h, explicitly fetch available configured evidence, then evaluate stored forecasts. Compatible future wave/current/weather values can support candidate assessments. Missing required coverage remains UNKNOWN, without assuming absent evidence passes. This is forecast-based evidence assessment, not a safety prediction or authorization.
 
 ## Running locally
 

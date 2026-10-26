@@ -8,6 +8,40 @@ const analysis={analysis_id:'fixture-run',document_sha256:'fixture-hash',filenam
 const rule={requirement_id:'env-0',condition_id:'source-a',gating:true,status:'UNKNOWN',reason_code:'EVIDENCE_MISSING',explanation:'Environmental Fetch required',effective_rule:{variable:'Source-backed variable',operator:'>',threshold:2,unit:'m'},source_spans:[{page:1,quotation:'Exact source clause'}],checks:[],evidence_references:[]};
 const interval={start:'2026-10-14T00:00:00Z',end:'2026-10-14T01:00:00Z',status:'UNKNOWN',explanation:'Evidence missing for interval',primary_reason:'EVIDENCE_MISSING',passed_count:0,stop_count:0,unknown_count:1,evidence_gap_count:1,rule_results:[rule]};
 const payload={assessment_id:'offline-assessment',current_assessment:interval,timeline:[interval],candidate_windows:[],evidence_gaps:[rule],audit:{horizon_hours:72,duration_hours:4,assessed_at:'2026-10-14T00:00:00Z',interval_semantics:'Native intervals'},disclaimer:'Advisory assessment; no operational authorization.'};
+test('backend diagnostics distinguish approved review from unassessed applicability and available evidence',async()=>{
+  const blocked={...rule,reason_code:'APPLICABILITY_UNASSESSED',diagnostics:{condition_id:'source-a',title:'Significant wave height',
+    review_status:'APPROVED',applicability_status:'UNASSESSED',source_verified:true,evidence_availability:'AVAILABLE',
+    evidence_eligibility:'NOT_EVALUATED_REVIEW_BLOCKED',point_count:73,provider:'COPERNICUS_MARINE',dataset_id:'retained-native-dataset',
+    native_units:['m'],normalized_units:['m'],native_time_range:{start:interval.start,end:interval.end},
+    stored_temporal_status:'COVERED',stored_spatial_status:'COASTAL_REVIEW_REQUIRED',coastal_review_flag_retained:true,
+    stored_spatial_criterion_satisfied:true,distance_km:1,threshold_result:'NOT_EVALUATED',stored_threshold_screening:'TRIGGERED',
+    qualification:'Inventory is not acceptance.',issues:[{code:'APPLICABILITY_UNASSESSED',explanation:'Explicit applicability review required.',action:'Review applicability.'}]}};
+  const cell={...interval,rule_results:[blocked]};
+  await show({...payload,current_assessment:cell,timeline:[cell]});
+  const table=screen.getByText('Requirement evidence & review status').closest('section');
+  expect(table).toHaveTextContent('APPROVED / UNASSESSED');
+  expect(table).toHaveTextContent('AVAILABLE / NOT EVALUATED REVIEW BLOCKED');
+  expect(table).toHaveTextContent('NOT_EVALUATED');
+  expect(table).toHaveTextContent('retained-native-dataset');
+  expect(table).toHaveTextContent('Review applicability.');
+  expect(screen.getByText(/Separate planning horizon/)).toBeTruthy();
+  const intervals=screen.getByText('Interval details').closest('section');
+  const detail=intervals.querySelector('details');
+  expect(detail.open).toBe(false);
+  fireEvent.click(within(intervals).getByText('1 unresolved constraints'));
+  expect(detail.open).toBe(true);
+  expect(intervals).toHaveTextContent('applicability is unassessed');
+});
+test('invalidated session assessment is removed from rendered state without automatic evaluation',()=>{
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  const saved={...payload,audit:{...payload.audit,analysis_run_id:analysis.analysis_id,document_sha256:analysis.document_sha256}};
+  const view=render(<DecisionWorkWindows analysis={analysis} session={{decision_result:saved}}/>);
+  expect(screen.getByText('72-hour decision timeline')).toBeTruthy();
+  view.rerender(<DecisionWorkWindows analysis={analysis} session={{decision_result:null,invalidated_assessment_id:saved.assessment_id}}/>);
+  expect(screen.queryByText('72-hour decision timeline')).toBeNull();
+  expect(screen.getByRole('alert')).toHaveTextContent('assessment invalidated');
+  expect(fetch).not.toHaveBeenCalled();
+});
 test.each([24,48,72])('%ih horizon posts and restores from session on reopen',async horizon=>{
   const response={...payload,audit:{...payload.audit,horizon_hours:horizon,analysis_run_id:analysis.analysis_id,document_sha256:analysis.document_sha256}};
   const fetch=vi.fn().mockResolvedValue({ok:true,json:async()=>response});vi.stubGlobal('fetch',fetch);
@@ -33,7 +67,7 @@ test('specific UNKNOWN reason is consistent across current selected interval and
   const text='Insufficient evidence: Dissolved oxygen data is stale.';
   for(const title of ['Current operational decision','Selected window details','Interval details','Missing evidence & required actions'])
     expect(within(screen.getByText(title).closest('section')).getByText(text)).toBeTruthy();
-  expect(within(screen.getByText('Evidence excluded under MVP availability policy').closest('section')).getByText(turbidity.explanation)).toBeTruthy();
+  expect(screen.getByText(turbidity.explanation)).toBeTruthy();
   expect(screen.queryByText('environmental_requirement-1-private')).toBeNull();
 });
 test('late session result and successful response synchronize controls to actual audit without auto evaluation',async()=>{
