@@ -34,6 +34,9 @@ TURBIDITY_MVP_EXCLUDED_CODES = {'EVIDENCE_MISSING', 'EVIDENCE_STALE', 'STALE_TUR
 TURBIDITY_MVP_WARNING = ('Turbidity evidence unavailable — excluded from MVP decision under the '
                          'evidence-availability policy. This is not a passing turbidity result '
                          'or authorization to work.')
+MVP_CONDITIONAL_EXPLANATION = ('Evaluated MVP constraints pass, but one or more applicable permit conditions remain '
+                               'unresolved under the MVP evidence-availability policy. This is not full permit '
+                               'verification or authorization to work.')
 NEXT_ACTIONS = {'REVIEW_REQUIRED': 'Complete Human Review.', 'REVIEW_REJECTED_UNRESOLVED': 'Resolve the rejected interpretation in Human Review.',
                 'REVIEW_CONFLICT':'Resolve the review fingerprint/provenance conflict before assessment.',
                 'APPLICABILITY_UNASSESSED': 'Explicitly assess applicability in Human Review.',
@@ -70,6 +73,18 @@ def stamp(value):
 def aggregate(results):
     states = [r['status'] for r in results if r.get('gating') and not r.get('mvp_evidence_excluded')]
     return 'STOP' if 'STOP' in states else 'UNKNOWN' if 'UNKNOWN' in states or not states else 'WORK'
+
+
+def presentation_metadata(status, excluded_unresolved_count):
+    """Presentation-only classification; raw decision status is unchanged."""
+    if status == 'STOP':
+        return {'presentation_status': 'STOP', 'presentation_label': 'STOP',
+                'presentation_explanation': EXPLANATIONS['STOP']}
+    if status == 'WORK' and excluded_unresolved_count:
+        return {'presentation_status': 'CONDITIONAL', 'presentation_label': 'MVP CANDIDATE / CONDITIONAL',
+                'presentation_explanation': MVP_CONDITIONAL_EXPLANATION}
+    return {'presentation_status': status, 'presentation_label': status,
+            'presentation_explanation': EXPLANATIONS.get(status, '')}
 
 
 def problem(notes):
@@ -148,10 +163,22 @@ def reviewed_validity(rows):
 
 def redundant_validity_restriction(text, validity):
     """Only the same explicit validity range is redundant, not operating limits."""
-    pattern=r'^Permit\s+valid\s+only\s+between\s+(.+?)\s+and\s+(.+?)\.?$'
+    # Permit analyses may restate the validity window either as
+    # ``Permit valid only between ... and ...`` or as the source-backed
+    # ``Valid only from ... through ...`` wording.  The optional explanatory
+    # sentence is still part of that same validity restatement; arbitrary
+    # trailing operational restrictions must remain non-redundant.
+    date = r'(?:\d{1,2}\s+[A-Za-z]+\s+\d{4}\s+\d{2}:\d{2}\s+UTC|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2}))'
+    pattern = (r'^\s*(?:Permit\s+)?valid\s+only\s+(?:between\s+('
+              + date + r')\s+and\s+(' + date + r')|from\s+('
+              + date + r')\s+(?:through|to|until)\s+(' + date + r'))'
+              r'\s*\.?\s*(?:;\s*no\s+evaluation\s+outside\s+this\s+interval\s+shall\s+produce\s+a\s+WORK\s+result\s*\.?\s*)?$')
     match=re.fullmatch(pattern,re.sub(r'\s+',' ',text).strip(),re.I)
     try:
-        return bool(match and explicit_utc(match[1])==explicit_utc(validity['permit_valid_from']) and explicit_utc(match[2])==explicit_utc(validity['permit_valid_until']))
+        if not match:
+            return False
+        start, end = (match[1], match[2]) if match[1] is not None else (match[3], match[4])
+        return explicit_utc(start)==explicit_utc(validity['permit_valid_from']) and explicit_utc(end)==explicit_utc(validity['permit_valid_until'])
     except ValueError:
         return False
 
@@ -540,7 +567,9 @@ def evaluate_interval(rows, environment, start, end, now):
     results = [evaluate_requirement(r, environment, start, end, now, linked) for r in rows]
     state = aggregate(results)
     warning = TURBIDITY_MVP_WARNING if any(r.get('mvp_evidence_excluded') for r in results) else None
+    excluded = sum(bool(r.get('gating') and r.get('mvp_evidence_excluded') and r['status'] == 'UNKNOWN') for r in results)
     return {'start': stamp(start), 'end': stamp(end), 'status': state,
+            'policy_excluded_unresolved_count': excluded, **presentation_metadata(state, excluded),
             'explanation': EXPLANATIONS[state] + (f' {warning}' if warning else ''),
             'primary_reason': next((r['reason_code'] for r in results if r.get('gating') and not r.get('mvp_evidence_excluded') and r['status'] == state), 'NO_APPLICABLE_CONSTRAINTS'),
             'passed_count': sum(r.get('gating') and not r.get('mvp_evidence_excluded') and r['kind'] == 'environmental_requirement' and r['status'] == 'WORK' for r in results),
@@ -568,10 +597,13 @@ def find_windows(timeline, duration_hours, include_conditional=False, ranking='e
         if hours < duration_hours:
             continue
         state = 'UNKNOWN' if any(i['status'] == 'UNKNOWN' for i in group) else 'WORK'
+        excluded = max(i.get('policy_excluded_unresolved_count', 0) for i in group)
         if include_conditional and state == 'WORK':
             continue
         windows.append({'start': group[0]['start'], 'end': group[-1]['end'], 'duration_hours': hours, 'status': state,
                         'type': 'CONDITIONAL' if state == 'UNKNOWN' else 'VERIFIED',
+                        **presentation_metadata(state, excluded),
+                        'policy_excluded_unresolved_count': excluded,
                         'primary_reason': next((i['primary_reason'] for i in group if i['status'] == 'UNKNOWN'), 'CONSTRAINT_PASSED'),
                         'unknown_count': max(i['unknown_count'] for i in group), 'passed_count': min(i['passed_count'] for i in group),
                         'warnings': [TURBIDITY_MVP_WARNING] if any(TURBIDITY_MVP_WARNING in i.get('warnings', []) for i in group) else [],
@@ -657,6 +689,7 @@ def assess(review_data, environmental_result=None, *, start=None, horizon_hours=
             combined_rule['diagnostics']['requested_interval'] = {'start':stamp(start),'end':stamp(current_end)}
             combined_rule['diagnostics']['threshold_result'] = combined_rule['status'] if combined_rule['checks'] else 'NOT_EVALUATED'
     current_state = aggregate(combined)
+    current_excluded = sum(bool(r.get('gating') and r.get('mvp_evidence_excluded') and r['status'] == 'UNKNOWN') for r in combined)
     if (current_end-start).total_seconds() < duration_hours*3600 and current_state != 'STOP':
         guard = {'requirement_id':'assessment-duration', 'condition_id':'duration', 'kind':'decision_prerequisite',
             'gating':True, 'status':'UNKNOWN', 'reason_code':'TEMPORAL_COVERAGE_INSUFFICIENT',
@@ -669,6 +702,8 @@ def assess(review_data, environmental_result=None, *, start=None, horizon_hours=
         current_state='UNKNOWN'
     warning = TURBIDITY_MVP_WARNING if any(r.get('mvp_evidence_excluded') for r in combined) else None
     current = {'start': stamp(start), 'end': stamp(current_end), 'status': current_state,
+               'policy_excluded_unresolved_count': current_excluded,
+               **presentation_metadata(current_state, current_excluded),
                'explanation': EXPLANATIONS[current_state] + (f' {warning}' if warning else ''), 'rule_results': combined,
                'passed_count': sum(r.get('gating') and not r.get('mvp_evidence_excluded') and r['kind'] == 'environmental_requirement' and r['status'] == 'WORK' for r in combined),
                'stop_count': sum(r.get('gating') and not r.get('mvp_evidence_excluded') and r['status'] == 'STOP' for r in combined),

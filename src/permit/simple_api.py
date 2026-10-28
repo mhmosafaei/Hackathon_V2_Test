@@ -222,6 +222,11 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
         analysis = app.state.analyses.get(inputs.analysis_id)
         if not analysis:
             return JSONResponse({'error': 'No active analysis for this session.'}, status_code=404)
+        if inputs.latitude is not None:
+            from .review_overlays import approved_spatial_points
+            approved = approved_spatial_points(list_reviews(root, analysis))
+            if not any(isinstance(lat, (int, float)) and isinstance(lon, (int, float)) and abs(inputs.latitude-lat) < 1e-9 and abs(inputs.longitude-lon) < 1e-9 for lat, lon in approved):
+                return JSONResponse({'error': 'An explicitly approved, source-verified permit point is required.'}, status_code=422)
         if app.state.busy:
             return JSONResponse({'error': 'A request is already running.'}, status_code=409)
         app.state.busy = True

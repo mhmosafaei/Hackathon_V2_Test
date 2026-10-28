@@ -405,6 +405,20 @@ def apply_source_verification(payload, pages, *, reset_review_state=True):
     def verified(spans):
         return source_spans_verified(spans, page_map)
 
+    def quoted_wgs84_point(spans):
+        """Return one explicit WGS84 lat/lon point, never an inferred location."""
+        matches = set()
+        for span in spans or []:
+            quote = re.sub(r'\s+', ' ', span.get('quotation') or ' ')
+            match = re.search(r'\bLatitude\s+(\d+(?:\.\d+)?)\s*([NS])\s*,\s*Longitude\s+(\d+(?:\.\d+)?)\s*([EW])\b', quote, re.I)
+            if not match or not re.search(r'\bWGS\s*84\b', quote, re.I):
+                continue
+            lat = float(match[1]) * (-1 if match[2].upper() == 'S' else 1)
+            lon = float(match[3]) * (-1 if match[4].upper() == 'W' else 1)
+            if -90 <= lat <= 90 and -180 <= lon <= 180:
+                matches.add((lat, lon))
+        return next(iter(matches)) if len(matches) == 1 else None
+
     seen = set()
     for condition in payload.get('conditions', []):
         if condition['number'] in seen:
@@ -435,15 +449,20 @@ def apply_source_verification(payload, pages, *, reset_review_state=True):
                 re.findall(r'(?<![\w.])(\d+(?:\.\d+)?)\s*' + suffix + r'\b',
                            normalise(context.get('coordinates_original') or ''), re.I))
                 for k, suffix in [('easting', 'E'), ('northing', 'N')])
-            context['source_verified'] = bool(context['source_verified'] and crs_backed and grid_backed and
-                context.get('source_page') in {s['page'] for s in context.get('source_spans', [])})
-            numbers = re.findall(r'(?<![\w.])-?\d+(?:\.\d+)?(?!\w|\.\d)', quotations)
-            context['point_verified'] = (context['source_verified'] and
-                context.get('geometry_type') == 'point' and
+            explicit_wgs84 = quoted_wgs84_point(context.get('source_spans'))
+            source_point_matches = bool(explicit_wgs84 and context.get('geometry_type') == 'point' and
                 normalise(context.get('coordinate_system') or '').replace(' ', '').upper() in {'WGS84', 'EPSG:4326'} and
-                all(v is not None and any(float(n) == v for n in numbers)
-                    for v in [context.get('latitude'), context.get('longitude')]) and
-                -90 <= (context.get('latitude') or 0) <= 90 and -180 <= (context.get('longitude') or 0) <= 180)
+                context.get('latitude') is not None and context.get('longitude') is not None and
+                abs(context['latitude'] - explicit_wgs84[0]) < 1e-9 and abs(context['longitude'] - explicit_wgs84[1]) < 1e-9)
+            if source_point_matches:
+                # A descriptive label and normalized coordinate serialization are not source claims.
+                context['source_verified'] = bool(verified(context.get('source_spans')) and crs_backed and
+                    context.get('source_page') in {s['page'] for s in context.get('source_spans', [])})
+            else:
+                context['source_verified'] = bool(context['source_verified'] and crs_backed and grid_backed and
+                    context.get('source_page') in {s['page'] for s in context.get('source_spans', [])})
+            # Source corroboration never substitutes for explicit human selection of an evaluation point.
+            context['point_verified'] = False
     for geofence in payload.get('geofences', []):
         boundary = geofence.get('coordinates_or_boundary')
         boundary_backed = boundary is None or bool(normalise(boundary)) and any(

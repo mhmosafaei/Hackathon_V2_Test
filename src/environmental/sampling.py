@@ -29,15 +29,24 @@ def source_depth(requirement):
     text = requirement.get('depth_requirement')
     if text is None:
         return None, None
+    quotes = ' '.join(s['quotation'] for s in requirement.get('source_spans', []))
     if requirement['routing']['preferred_provider'] in {'ECMWF_FORECAST', 'ERA5'} and text in {'surface','10m','10 m','2m','2 m'}:
         return None, None
     if requirement['routing']['preferred_provider'] in {'ECMWF_FORECAST', 'ERA5'}:
         from .catalog import canonical
         variable = canonical(requirement['routing'].get('canonical_variable') or requirement.get('canonical_variable'))
         height = {'wind_speed_10m':10, 'wind_direction_10m':10, 'wind_gust':10, 'air_temperature':2}.get(variable)
-        if height is not None and re.fullmatch(rf'{height}\s*(?:m|metres?|meters?)\s+(?:height|above\s+(?:the\s+)?ground)', text.strip(), re.I):
-            return None, None  # Configured atmospheric height, not ocean depth.
-    quotes = ' '.join(s['quotation'] for s in requirement.get('source_spans', []))
+        if height is not None:
+            atmospheric_height = re.fullmatch(
+                rf'{height}\s*(?:m|metres?|meters?)\s+(?:height|above\s+(?:the\s+)?(?:ground|sea\s+surface))',
+                text.strip(), re.I)
+            legacy_atmospheric_height = re.fullmatch(
+                rf'{height}\s*(?:m|metres?|meters?)\s+(?:height|above\s+(?:the\s+)?ground)',
+                text.strip(), re.I)
+            source_supports_height = re.search(
+                r'\b(?:10\s*m\s+wind|wind\s+gust|wind\s+direction)\b', quotes, re.I)
+            if atmospheric_height and (legacy_atmospheric_height or source_supports_height):
+                return None, None  # Atmospheric measurement height, not ocean depth.
     model_level = re.fullmatch(r'sea[- ]surface\s+model\s+level\s*\((.+)\)', text.strip(), re.I)
     if model_level and re.sub(r'\s+', ' ', text.strip()).casefold() in re.sub(r'\s+', ' ', quotes).casefold():
         text = model_level[1]  # Same source-backed literal depth; preserve original attribution.

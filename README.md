@@ -1,10 +1,57 @@
-# PermitPulse
+# PermitPulse V 2.0
 
 Source-backed marine permit review and deterministic environmental evidence assessment for the hackathon MVP.
 
 **Advisory only:** not regulatory approval, legal compliance confirmation, vessel-master approval, permit-to-work authorization or safe-to-work certification.
 
 For step-by-step startup, permit analysis, environmental retrieval, human review, and work-window evaluation, see the [PermitPulse Operator Guide](docs/PERMITPULSE_OPERATOR_GUIDE.md).
+
+## PermitPulse V 2.0 release notes
+
+V 2.0 improves UI usability, visual clarity, navigation, evidence presentation, human-review transparency, the 72-hour decision timeline, and candidate work-window reporting while preserving the environmental decision-engine behavior.
+
+## Technology stack and prerequisites
+
+PermitPulse uses Python/FastAPI, React/Vite, deterministic permit decision modules, Pytest, and Vitest. Install the dependencies listed by the repository's backend dependency file and use Node.js/npm.
+
+```powershell
+python -m pip install -r requirements.txt
+cd frontend
+npm install
+cd ..
+```
+
+## Windows PowerShell startup
+
+From the cloned repository root, start the backend:
+
+```powershell
+python -m uvicorn src.permit.simple_api:create_app --factory --host 127.0.0.1 --port 8531 --env-file ..\.env
+```
+
+`..\.env` is the existing development environment-file location in this setup. Change it for another clone; never commit `.env` files or secrets.
+
+In a second PowerShell terminal:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open the Vite URL shown in the terminal, normally `http://127.0.0.1:5175/`; Vite may select another available port. Keep both processes running. Stop them with `Ctrl+C` and restart with the same commands.
+
+## Dashboard workflow
+
+Start a permit analysis, inspect extracted conditions and source quotations, review environmental evidence and human-review states, then use **Decision & Work Windows** to evaluate existing evidence without fetching new provider data. Inspect candidate timelines, constraint details, provenance, and unresolved-evidence warnings.
+
+`STOP` means a reviewed constraint was triggered. `UNKNOWN` means required review or evidence remains unresolved. `WORK` is advisory for the evaluated scope. `MVP CANDIDATE / CONDITIONAL` means MVP constraints pass while applicable permit conditions remain unresolved under the MVP evidence-availability policy.
+
+## Environmental configuration and limitations
+
+Provider configuration belongs in the local ignored environment file. Do not expose credentials in source, arguments, logs, screenshots, or Git history; the frontend never receives provider credentials.
+
+PermitPulse is advisory evidence assessment, not regulatory approval, legal-compliance proof, permit-to-work authorization, or operational authorization. Model evidence does not establish local truth. Source verification, applicability, geography, units, depth, coverage, and human review remain explicit safeguards. Turbidity without compatible native FNU evidence remains UNKNOWN; any MVP exclusion is explicitly warned and is not a passing result. Assessment snapshots are session-scoped and exact hashes can vary with evaluation time.
 
 ## What PermitPulse does
 

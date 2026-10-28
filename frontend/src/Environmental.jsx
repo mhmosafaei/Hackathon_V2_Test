@@ -1,11 +1,27 @@
 import React, {useState, useRef, useEffect} from 'react';
 import PermitContext from './PermitContext.jsx';
 import environmentalLimits from '../../config/environmental_limits.json';
+import {FileText, Waves, Wind, Database, Cloud, Eye, Droplets, Thermometer, Gauge, ArrowRight, ArrowUp, MoveHorizontal, Clock3, AlertTriangle, CheckCircle2, Info, MapPin, CalendarDays, Search, Filter, Download, Shield} from 'lucide-react';
 
 const ENVIRONMENTAL_MAX_FETCH_HOURS = environmentalLimits.max_fetch_hours;
 const utcInput = value => value ? `${value.length === 16 ? `${value}:00` : value}Z` : null;
 
 const label = value => (value || '').replaceAll('_', ' ');
+const environmentIcon = value => {
+  const name = String(value || '').toLowerCase();
+  if (name.includes('wave') && name.includes('period')) return Clock3;
+  if (name.includes('wave')) return Waves;
+  if (name.includes('wind')) return Wind;
+  if (name.includes('eastward')) return ArrowRight;
+  if (name.includes('northward')) return ArrowUp;
+  if (name.includes('current speed')) return MoveHorizontal;
+  if (name.includes('visibility')) return Eye;
+  if (name.includes('turbidity')) return Droplets;
+  if (name.includes('temperature')) return Thermometer;
+  if (name.includes('precipitation')) return Cloud;
+  return Gauge;
+};
+const providerIcon = name => /copernicus/i.test(name) ? Waves : /ecmwf|wind/i.test(name) ? Wind : /era|database/i.test(name) ? Database : Cloud;
 export const displayedPointLabel = row => {
   const evidence=row.evidence, point=evidence?.points?.[0];
   if (row.threshold == null) {
@@ -102,16 +118,16 @@ export default function Environmental({analysis, session}) {
   }
   if (!analysis) return <div className="empty-state"><h2>Environmental Intelligence</h2><p>Analyze a permit to identify its environmental evidence requirements.</p></div>;
   return <div className="environment-panel">
-    <div className="page-heading"><div><div className="eyebrow">ENVIRONMENTAL INTELLIGENCE</div><h1>Required environmental evidence</h1><p>{analysis.filename}</p></div></div>
-    <p className="notice">Environmental evidence is not operational authorization. All extracted requirements remain unreviewed.</p>
+    <section className="environment-hero"><div className="page-heading"><div><div className="eyebrow">ENVIRONMENTAL INTELLIGENCE</div><h1>Environmental Evidence Overview</h1><p>Permit-linked environmental evidence, provider coverage, and threshold screening.</p></div><p className="environment-warning"><AlertTriangle size={18}/> Environmental evidence is not operational authorization.<small>All extracted requirements remain unreviewed.</small></p></div><div className="environment-document-strip"><FileText size={23}/><div><div className="eyebrow">PERMIT DOCUMENT</div><strong title={analysis.filename}>{analysis.filename}</strong><small>{analysis.page_count || '—'} pages · Extraction record</small></div><div className="environment-extraction"><CheckCircle2 size={22}/><div><div className="eyebrow">EXTRACTION STATUS</div><strong>Extraction completed</strong><small>Environmental review remains separate.</small></div></div></div></section>
+    {analysis.mode !== 'MOCK' && <p className="notice">Environmental evidence is not operational authorization. All extracted requirements remain unreviewed.</p>}
     {analysis.mode === 'MOCK' && <p className="notice warning">Offline preview · Any fetched values are synthetic mocked test evidence.</p>}
-    <div className="environment-metrics">{[['Environmental Requirements', authoritativeRequirementCount], ['Copernicus Variables', count('COPERNICUS_MARINE')],
-      ['ECMWF Variables', count('ECMWF_FORECAST')], ['Historical / ERA5', count('ERA5')], ['External Evidence', count('EXTERNAL')]].map(([name, value]) =>
-      <section className="card metric" key={name}><div className="eyebrow">{name}</div><strong>{value}</strong></section>)}</div>
-    <section className="card provider-status"><h2>Provider availability</h2>{Object.entries(providers).map(([name, status]) => <p key={name}><b>{label(name)}</b> · {status}</p>)}</section>
-    {!!capabilities.length && <section className="card provider-status" data-testid="capability-coverage"><h2>Environmental capability coverage</h2><div className="capability-grid">{['SUPPORTED','PARTIAL','UNAVAILABLE'].map(status => <div key={status}><div className="eyebrow">{label(status)}</div>{capabilities.filter(c=>c.implementation_status===status).map(c=><p key={c.canonical_variable}><b>{c.display_name}</b> · {c.unit}{c.derived ? ' · derived' : ''}</p>)}</div>)}</div><p className="muted">Informational capability catalogue only; variables are fetched only when required by the permit and explicitly requested.</p></section>}
+    <div className="environment-metrics">{[['Environmental Requirements', authoritativeRequirementCount, FileText], ['Copernicus Variables', count('COPERNICUS_MARINE'), Waves],
+      ['ECMWF Variables', count('ECMWF_FORECAST'), Wind], ['Historical / ERA5', count('ERA5'), Database], ['External Evidence', count('EXTERNAL'), FileText]].map(([name, value, Icon]) =>
+      <section className="card metric environment-kpi" key={name}><Icon size={23}/><div><div className="eyebrow">{name}</div><strong>{value}</strong></div></section>)}</div>
+    <section className="card provider-status"><div className="environment-section-heading"><div><h2><Info size={18}/> Provider availability</h2><p>Current configuration and retrieval status. Connectivity does not confirm evidence suitability.</p></div></div><div className="provider-grid">{Object.entries(providers).map(([name, status]) => {const Icon=providerIcon(name); return <article key={name}><Icon size={22}/><div><b>{label(name)}</b><span className="provider-state">{String(status)}</span><small>Retrieval and evidence suitability remain separately assessed.</small></div></article>;})}</div></section>
+    {!!capabilities.length && <section className="card provider-status" data-testid="capability-coverage"><div className="environment-section-heading"><div><h2><Shield size={18}/> Environmental capability coverage</h2><p>Informational capability catalogue only. Variables are fetched only when required and explicitly requested.</p></div><div className="capability-legend"><span>● Supported</span><span>● Partial</span><span>● Unavailable</span></div></div><div className="capability-table"><div className="capability-row capability-header"><span>Parameter</span><span>Unit</span><span>Status</span><span>Provider / note</span></div>{capabilities.map(c=>{const Icon=environmentIcon(c.display_name); return <div className="capability-row" key={c.canonical_variable}><Icon size={16}/><span>{c.display_name}</span><span>{c.unit || '—'}</span><b className={`capability-status ${String(c.implementation_status).toLowerCase()}`}>{label(c.implementation_status)}</b><small>{c.derived ? 'Derived from compatible inputs' : c.provider || 'Availability catalogue'}</small></div>})}</div></section>}
     {!extracted.length ? <>{permitContext}<div className="empty-state"><p>No explicit environmental data requirements were identified in this permit.</p></div></> : <>
-      <section className="card conditions"><div className="section-heading"><h2>Required by Permit / Contract</h2></div>
+      <section className="card conditions"><div className="section-heading environment-section-heading"><div><h2><FileText size={18}/> Required by Permit / Contract</h2><p>Environmental requirements extracted from the permit, with source-derived thresholds and current status.</p></div><div className="environment-table-tools"><label className="search"><Search size={15}/><input aria-label="Search environmental requirements" placeholder="Search requirements…"/></label><button className="filter-button" type="button"><Filter size={14}/> All statuses</button></div></div>
         <div className="table-scroll"><table><thead><tr>{['Condition', 'Environmental Requirement', 'Variable', 'Provider', 'Threshold', 'Status'].map(h => <th key={h}>{h}</th>)}</tr></thead>
           <tbody>{rows.map((r, i) => <tr key={i} data-testid="environment-row"><td>{r.condition_id}</td><td className="requirement">{r.requirement_text}
             <details><summary>Source and retrieval notes</summary><p>Physical page {r.source_page} · {r.source_verified ? 'Source quote verified; interpretation unreviewed' : 'Source verification required'}</p>

@@ -17,6 +17,7 @@ ALIASES = {'wave_direction': 'mean_wave_direction', 'wind_speed': 'wind_speed_10
            'wave_direction_degrees': 'mean_wave_direction',
            'dissolved oxygen': 'dissolved_oxygen', 'oxygen': 'dissolved_oxygen',
            'dissolved_oxygen_1m_below_surface': 'dissolved_oxygen',
+           'dissolved_oxygen_surface': 'dissolved_oxygen',
            'eastward current': 'eastward_current', 'eastward_current': 'eastward_current',
            'eastward_current_component': 'eastward_current',
            'eastward_current_component_u': 'eastward_current',

@@ -89,6 +89,10 @@ def test_missing_turbidity_with_passing_numerical_gate_is_work_with_warning():
     assert result['current_assessment']['warnings'] == [
         'Turbidity evidence unavailable — excluded from MVP decision under the evidence-availability policy. This is not a passing turbidity result or authorization to work.'
     ]
+    assert result['current_assessment']['status'] == 'WORK'
+    assert result['current_assessment']['presentation_label'] == 'MVP CANDIDATE / CONDITIONAL'
+    assert result['current_assessment']['policy_excluded_unresolved_count'] == 1
+    assert result['candidate_windows'][0]['presentation_label'] == 'MVP CANDIDATE / CONDITIONAL'
 
 
 def test_missing_turbidity_does_not_override_wave_stop():
@@ -99,7 +103,9 @@ def test_missing_turbidity_does_not_override_wave_stop():
     for mapping in row['mapping']: mapping['requirement_index'] = 1
     reviews['requirements'].append(row); env['requirements'].append({**te['requirements'][0], 'requirement_index': 1})
     env['requirements'][1].pop('evidence')
-    assert run(reviews, env)['current_assessment']['status'] == 'STOP'
+    assessment = run(reviews, env)['current_assessment']
+    assert assessment['status'] == 'STOP'
+    assert assessment['presentation_label'] == 'STOP'
 
 
 @pytest.mark.parametrize('variable',['surface_current_speed','eastward_current','northward_current'])

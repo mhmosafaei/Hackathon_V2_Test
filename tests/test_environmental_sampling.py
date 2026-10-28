@@ -7,7 +7,9 @@ import pytest
 from tests.test_simple_environment import requirement, analysis, inputs
 from src.environmental.service import evaluate, compatible_points
 from src.environmental.fixture import mock_evidence
-from src.environmental.sampling import timestep_bounds, weather_spatial_limit
+from src.environmental.sampling import timestep_bounds, weather_spatial_limit, source_depth
+from src.environmental.catalog import canonical
+from src.environmental.router import route
 from src.environmental.models import EnvironmentalRequest, EvaluationInput
 
 FIXTURE = json.loads((Path(__file__).parent/'fixtures/synthetic_environment_requirements.json').read_text())
@@ -100,6 +102,35 @@ def test_unquoted_depth_and_conflicting_override_block_fetch(tmp_path):
         assert 'depth interpretation requires review' in row['notes_for_evaluation']
     row=evaluate(analysis(r),inputs(depth=2),tmp_path,transports={})['requirements'][0]
     assert 'conflicts with source depth' in row['notes_for_evaluation']
+
+
+@pytest.mark.parametrize('variable,quote', [
+    ('wind_speed_10m', '10 m wind speed shall be assessed.'),
+    ('wind_gust', 'Wind gust at 10 m above sea surface shall be assessed.'),
+    ('wind_direction_10m', '10 m wind direction shall be recorded.'),
+])
+def test_source_backed_atmospheric_height_above_sea_surface_is_not_marine_depth(variable, quote):
+    row = {'depth_requirement': '10 m above sea surface',
+           'routing': {'preferred_provider': 'ECMWF_FORECAST', 'canonical_variable': variable},
+           'source_spans': [{'quotation': quote}]}
+    assert source_depth(row) == (None, None)
+
+
+def test_ambiguous_atmospheric_height_remains_blocked():
+    row = {'depth_requirement': '10 m somewhere above water',
+           'routing': {'preferred_provider': 'ECMWF_FORECAST', 'canonical_variable': 'wind_speed_10m'},
+           'source_spans': [{'quotation': '10 m wind speed shall be assessed.'}]}
+    depth, error = source_depth(row)
+    assert depth is None
+    assert 'depth interpretation requires review' in error
+
+
+def test_dissolved_oxygen_surface_alias_routes_to_configured_marine_oxygen():
+    assert canonical('dissolved_oxygen_surface') == 'dissolved_oxygen'
+    routed = route('dissolved_oxygen_surface')
+    assert routed['canonical_variable'] == 'dissolved_oxygen'
+    assert routed['preferred_provider'] == 'COPERNICUS_MARINE'
+    assert routed['implemented'] is True
 
 
 def test_modelled_oxygen_conversion_provenance_keeps_both_units(tmp_path):

@@ -18,8 +18,9 @@ FIELDS = {
     'environmental_requirement': {'variable', 'canonical_variable', 'operator', 'threshold', 'unit',
                                   'temporal_requirement', 'depth_requirement', 'geographic_scope'},
     'geofence': {'description', 'restriction'},
+    'spatial_context': set(),
 }
-ARRAYS = {'condition': 'conditions', 'environmental_requirement': 'environmental_requirements', 'geofence': 'geofences'}
+ARRAYS = {'condition': 'conditions', 'environmental_requirement': 'environmental_requirements', 'geofence': 'geofences', 'spatial_context': 'spatial_context'}
 
 
 def fingerprint(record):
@@ -76,6 +77,8 @@ def validate_review(data, kind, original):
 
 
 def relevance(record, kind):
+    if kind == 'spatial_context':
+        return True
     if kind == 'geofence':
         return True
     if kind == 'condition':
@@ -120,7 +123,7 @@ def list_reviews(root, analysis):
         current = analysis.get(ARRAYS[kind], [])
         source = current[index] if index < len(current) else raw
         mapping = [r for r in analysis.get('environmental_mapping', []) if str(r.get('condition_id')) == str(raw.get('condition_id'))] if kind == 'environmental_requirement' else []
-        rows.append({'target_id': target_id, 'kind': kind, 'condition_id': raw.get('condition_id', raw.get('number', raw.get('name'))),
+        rows.append({'target_id': target_id, 'kind': kind, 'condition_id': raw.get('condition_id', raw.get('number', raw.get('name', raw.get('location_name')))),
                      'original_fingerprint': fingerprint(raw), 'original': raw, 'source': source, 'mapping': mapping,
                      'review': overlay if not conflict else None, 'state': state, 'conflict': conflict,
                      'applicability': overlay['applicability'] if overlay and not conflict else 'UNASSESSED',
@@ -131,11 +134,17 @@ def list_reviews(root, analysis):
     for row in rows:
         row['bulk_blocker'] = bulk_blocker(row)
         row['bulk_eligible'] = row['bulk_blocker'] is None
+    decision_context = {key: deepcopy(analysis.get(key)) for key in ('temporal_context','spatial_context','geofences')}
+    for row in rows:
+        if row['kind'] == 'spatial_context' and row['state'] == 'APPROVED' and row['applicability'] == 'APPLICABLE' and row['source'].get('source_verified') is True:
+            decision_context['spatial_context'][targets(original)[row['target_id']][1]]['point_verified'] = True
     return {'analysis_run_id': analysis['analysis_id'], 'document_sha256': analysis['document_sha256'], 'requirements': rows,
-            'decision_context': {key: deepcopy(analysis.get(key)) for key in ('temporal_context','spatial_context','geofences')}}
+            'decision_context': decision_context}
 
 
 def bulk_blocker(row):
+    if row['kind'] == 'spatial_context':
+        return 'SPATIAL_REVIEW_REQUIRES_EXPLICIT_ACTION'
     if row['conflict']:
         return 'REVIEW_CONFLICT'
     if row['state'] != 'UNREVIEWED':
@@ -152,6 +161,20 @@ def bulk_blocker(row):
     except ValueError as exc:
         return str(exc)
     return None
+
+
+def approved_spatial_points(review_data):
+    """Return only explicitly approved, source-backed point coordinates."""
+    points = set()
+    for row in review_data.get('requirements', []):
+        source = row.get('source', {})
+        if (row.get('kind') == 'spatial_context' and row.get('state') == 'APPROVED'
+                and row.get('applicability') == 'APPLICABLE'
+                and source.get('source_verified') is True and source.get('geometry_type') == 'point'):
+            lat, lon = source.get('latitude'), source.get('longitude')
+            if isinstance(lat, (int, float)) and isinstance(lon, (int, float)) and -90 <= lat <= 90 and -180 <= lon <= 180:
+                points.add((lat, lon))
+    return points
 
 
 def write_store(path, store):

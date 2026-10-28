@@ -28,6 +28,18 @@ async function upload() {
   return user;
 }
 describe('simple session dashboard', () => {
+  it('keeps the complete navigation row and exposes long filenames accessibly', () => {
+    network(); render(<App/>);
+    const navigation = screen.getByRole('navigation', {name: 'Primary navigation'});
+    expect(within(navigation).getByRole('button', {name: 'Permit Intelligence'})).toBeVisible();
+    expect(within(navigation).getByRole('button', {name: 'Environmental Intelligence'})).toBeVisible();
+    expect(within(navigation).getByRole('button', {name: 'Human Review'})).toBeVisible();
+    expect(within(navigation).getByRole('button', {name: 'Decision & Work Windows'})).toBeVisible();
+    const longName = 'very-long-permit-document-name-that-needs-a-readable-clamp.pdf';
+    render(<Results analysis={{...fixture(), filename: longName}}/>);
+    expect(screen.getByTitle(longName)).toHaveAttribute('title', longName);
+    expect(screen.getByTitle(longName)).toHaveClass('document-filename');
+  });
   it('displays the supplied PermitPulse branding in the dashboard header',()=>{
     network();render(<App/>);
     const wordmark=screen.getByRole('img',{name:'PermitPulse'});

@@ -4,7 +4,7 @@ from datetime import timedelta
 from pathlib import Path
 import pytest
 from tests.test_decision_engine import fixture,run,T
-from src.permit.decision_engine import reviewed_validity,assess
+from src.permit.decision_engine import reviewed_validity,assess,redundant_validity_restriction
 
 
 def reviewed_time_fixture():
@@ -26,6 +26,41 @@ def test_reviewed_clause_links_validity_without_summary_review():
     assert time['status']=='WORK' and time['reason_code']=='TIME_CONFIRMED'
     assert time['reviewed_validity_source']['reviewed_validity_provenance'][0]['source_span']['page']==3
     assert (reviews,env)==before
+
+
+def test_from_through_validity_restatement_is_redundant():
+    validity={'permit_valid_from':'2026-10-01T00:00:00Z','permit_valid_until':'2028-10-31T23:59:00Z'}
+    text=('Valid only from 1 October 2026 00:00 UTC through 31 October 2028 23:59 UTC; '
+          'no evaluation outside this interval shall produce a WORK result.')
+    assert redundant_validity_restriction(text, validity)
+
+
+def test_validity_restatement_does_not_absorb_additional_restriction():
+    validity={'permit_valid_from':'2026-10-01T00:00:00Z','permit_valid_until':'2028-10-31T23:59:00Z'}
+    text=('Valid only from 1 October 2026 00:00 UTC through 31 October 2028 23:59 UTC; '
+          'night work prohibited.')
+    assert not redundant_validity_restriction(text, validity)
+
+
+def test_validity_only_inside_window_remains_work_after_redundancy_fix():
+    reviews, env = reviewed_time_fixture()
+    current = run(reviews, env)['current_assessment']
+    time = next(r for r in current['rule_results'] if r['condition_id'] == 'time')
+    assert time['reason_code'] == 'TIME_CONFIRMED' and time['status'] == 'WORK'
+
+
+@pytest.mark.parametrize('mutation', ['missing_from', 'invalid_until'])
+def test_invalid_reviewed_validity_remains_unknown(mutation):
+    reviews, env = reviewed_time_fixture()
+    if mutation == 'missing_from':
+        reviews['requirements'][1]['source']['source_spans'][0]['quotation'] = (
+            'This synthetic permit is valid only through 31 October 2028 23:59 UTC.')
+    else:
+        reviews['requirements'][1]['source']['source_spans'][0]['quotation'] = (
+            'This synthetic permit is valid only from 1 October 2026 through never UTC.')
+    current = run(reviews, env)['current_assessment']
+    time = next(r for r in current['rule_results'] if r['condition_id'] == 'time')
+    assert time['status'] == 'UNKNOWN'
 
 
 def test_reviewed_validity_outside_bounds_is_non_work():
