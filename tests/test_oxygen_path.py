@@ -25,7 +25,12 @@ def test_oxygen_daily_3d_extraction_persistence_provider_api(tmp_path,monkeypatc
     calls=[];extraction_calls=[]
     def provider(request):
         calls.append(request)
-        return query_evidence(request)
+        evidence = query_evidence(request)
+        evidence.update({'temporal_resolution': 86400, 'quality_status': 'COASTAL_REVIEW_REQUIRED',
+                         'notes': 'Synthetic supportive modelled evidence; not equivalent to required in-situ monitoring; cannot resolve subdaily excursions.'})
+        for point in evidence['points']:
+            point.update({'raw_value': 200, 'unit': 'mmol m-3'})
+        return evidence
     def extraction(packet):
         extraction_calls.append(1)
         payload=mock_request(packet);payload['conditions']=payload['conditions'][:1]
