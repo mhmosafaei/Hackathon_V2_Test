@@ -1,6 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import Environmental from './Environmental.jsx';
 import HumanReview, {reviewSummary} from './HumanReview.jsx';
+import HumanReviewOverview from './HumanReviewOverview.jsx';
 import DecisionWorkWindows from './DecisionWorkWindows.jsx';
 import './WorkflowStepper.css';
 import brandLogo from './assets/permitpulse-logo.png';
@@ -64,7 +65,7 @@ const workflowSteps = [
 ];
 const workflowCopy = {
   permit: ['Understand the permit', 'Upload a permit and inspect the extracted conditions, limits and source text.', 'Analyze the PDF, then continue to Human Review.'],
-  review: ['Check the interpretation', 'Confirm each extracted condition and whether it applies to the planned work.', 'Resolve every review item to unlock Environmental Intelligence. You can return and edit later.'],
+  review: ['Check the interpretation', '', 'Please resolve every AI-extracted item to unlock Environmental Intelligence and downstream decision assessment. You can return and edit later.'],
   environment: ['Gather environmental evidence', 'See which permit conditions need environmental data, then request evidence for a confirmed point and UTC period.', 'Fetch data, or explicitly continue with an evidence gap if retrieval is unavailable.'],
   decision: ['Assess work windows', 'Compare reviewed conditions with the evidence currently available.', 'Choose the work-window criteria and evaluate. Return to earlier steps whenever needed.']
 };
@@ -77,24 +78,45 @@ function AppNav({tab, setTab, access, completed}) {
       <Icon size={17}/><span>{label}</span><small className="workflow-nav-state" aria-hidden="true">{completed[id] ? 'Done' : !access[id] ? 'Locked' : tab === id ? 'Current' : 'Ready'}</small>
     </button>)}</nav>;
 }
-function WorkflowGuide({tab, access, reviewProgress, environmentHandled, onStep, onContinueWithoutEvidence, compact=false}) {
+function ReviewDashboard({progress, rows}) {
+  const total = progress?.total || 0;
+  const resolved = progress?.resolved || 0;
+  const percentage = total ? Math.round(resolved / total * 100) : 0;
+  const summary = rows ? reviewSummary(rows) : null;
+  const applicabilityTotal = summary ? summary.applicable + summary.notApplicable + summary.unassessed : 0;
+  const locationItems = rows?.filter(row => row.kind === 'spatial_context').length || 0;
+  const counts = [summary?.applicable || 0, summary?.notApplicable || 0, summary?.unassessed || 0];
+  const markerDegrees = 6;
+  const emptyCategories = counts.filter(count => count === 0).length;
+  const angles = applicabilityTotal
+    ? counts.map(count => count ? count / applicabilityTotal * (360 - emptyCategories * markerDegrees) : markerDegrees)
+    : [markerDegrees, markerDegrees, 360 - 2 * markerDegrees];
+  const applicableEnd = angles[0];
+  const notApplicableEnd = angles[0] + angles[1];
+  return <div className="workflow-review-dashboard" aria-label="Human Review dashboard">
+    <div className="workflow-review-gauge" role="img" aria-label={`Condition applicability: ${summary?.applicable ?? 0} applicable, ${summary?.notApplicable ?? 0} not applicable, ${summary?.unassessed ?? 0} unassessed. Zero-count categories appear as small markers.`} style={{'--applicable-end':`${applicableEnd}deg`,'--not-applicable-end':`${notApplicableEnd}deg`}}><span>{applicabilityTotal}<small>conditions</small></span></div>
+    <div className="workflow-review-stats"><strong>{resolved} / {total} review items · {percentage}%</strong><span>{progress?.remaining ?? Math.max(0,total-resolved)} remaining{locationItems ? ` · ${locationItems} location ${locationItems === 1 ? 'item' : 'items'} reviewed separately` : ''}</span><div className="workflow-applicability"><span><i className="workflow-applicable-dot"/>Applicable <b>{summary?.applicable ?? '—'}</b></span><span><i className="workflow-not-applicable-dot"/>Not applicable <b>{summary?.notApplicable ?? '—'}</b></span><span><i className="workflow-unassessed-dot"/>Unassessed <b>{summary?.unassessed ?? '—'}</b></span></div></div>
+  </div>;
+}
+function WorkflowGuide({tab, access, reviewProgress, reviewRows, environmentHandled, onStep, onContinueWithoutEvidence, compact=false}) {
   const index = workflowSteps.findIndex(([id]) => id === tab);
   const previous = workflowSteps[index - 1], next = workflowSteps[index + 1];
   const [title, description, task] = workflowCopy[tab];
   const nextReason = tab === 'permit' ? 'Analyze a permit to continue.' : tab === 'review'
     ? reviewProgress ? `${reviewProgress.remaining} review item(s) remain.` : 'Loading review status…' : 'Fetch evidence or acknowledge the gap to continue.';
-  return <section className={`workflow-guide ${compact ? 'workflow-guide-compact' : ''}`} aria-label={`Step ${index + 1} ${compact ? 'navigation' : 'guidance'}`}>
-    <div><span className="workflow-guide-label">STEP {index + 1} OF 4</span>
-      {!compact && <><h2>{title}</h2><p>{description}</p><p className="workflow-guide-task"><strong>What to do:</strong> {task}</p>
-        {tab === 'review' && reviewProgress && <p className="workflow-guide-progress">{reviewProgress.resolved} of {reviewProgress.total} review items resolved · {reviewProgress.remaining} remaining</p>}
+  return <section className={`workflow-guide ${compact ? 'workflow-guide-compact' : ''} ${tab === 'review' && !compact ? 'workflow-guide-review' : ''}`} aria-label={`Step ${index + 1} ${compact ? 'navigation' : 'guidance'}`}>
+    <div className="workflow-guide-intro"><span className="workflow-guide-label">STEP {index + 1} OF 4</span>
+      {!compact && <><h2>{title}</h2>{description && <p>{description}</p>}<p className="workflow-guide-task">{tab !== 'review' && <strong>What to do:</strong>} {task}</p>
         {tab === 'environment' && environmentHandled && <p className="workflow-guide-progress">Environmental evidence step handled. You can continue to the decision.</p>}</>}
     </div>
+    {tab === 'review' && !compact && reviewProgress && <ReviewDashboard progress={reviewProgress} rows={reviewRows}/>}
     <div className="workflow-guide-actions">
-      {previous && <button type="button" className="button secondary" onClick={() => onStep(previous[0])}>Back</button>}
+      {previous && <button type="button" className="button secondary" onClick={() => onStep(previous[0])}>{tab === 'review' && !compact ? 'Back: Permit Intelligence' : 'Back'}</button>}
       {tab === 'environment' && !environmentHandled && <button type="button" className="button secondary" onClick={onContinueWithoutEvidence}>Continue with evidence gap</button>}
       {next && <button type="button" className="button primary" disabled={!access[next[0]]} title={!access[next[0]] ? nextReason : undefined} onClick={() => onStep(next[0])}>Next: {next[2]}</button>}
       {next && !access[next[0]] && <small>{nextReason}</small>}
     </div>
+    {tab === 'review' && !compact && Array.isArray(reviewRows) && <HumanReviewOverview summary={reviewSummary(reviewRows)}/>}
   </section>;
 }
 function limitTitle(label) {
@@ -261,7 +283,7 @@ export default function App() {
   }
   return <div className="app"><header className="header"><div className="brand"><img className="brand-symbol" src={brandLogo} alt=""/><div><img className="brand-wordmark" src={brandWordmark} alt="PermitPulse"/><span>Evidence first. Human review always.</span></div></div><AppNav tab={tab} setTab={setTab} access={access} completed={completed}/><button className="button secondary new-analysis" onClick={reset} disabled={status === 'loading'}><Plus size={16}/> New Analysis</button></header>
     <main className={tab === 'permit' && currentAnalysis ? 'main-permit-result' : undefined}>
-    {(tab !== 'permit' || !currentAnalysis) && <WorkflowGuide tab={tab} access={access} reviewProgress={reviewProgress} environmentHandled={environmentHandled} onStep={setTab} onContinueWithoutEvidence={acknowledgeEvidenceGap}/>}
+    {(tab !== 'permit' || !currentAnalysis) && <WorkflowGuide tab={tab} access={access} reviewProgress={reviewProgress} reviewRows={reviewData?.requirements} environmentHandled={environmentHandled} onStep={setTab} onContinueWithoutEvidence={acknowledgeEvidenceGap}/>}
     {tab === 'decision' && access.decision && <DecisionWorkWindows key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={assessmentStale ? {...session,decision_result:null} : session} reviewReady={reviewComplete} reviewProgress={reviewProgress} assessmentStale={assessmentStale} onEvaluated={decision=>{setAssessmentStale(false);setSession(previous=>previous ? {...previous,decision_result:decision,invalidated_assessment_id:null} : previous);}} onReview={id=>{setReviewTarget(id);setTab('review');}}/>}
     {tab === 'review' && <HumanReview key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} initialTargetId={reviewTarget} onUpdated={updateReview} onLoaded={setReviewData}/>}
     <div hidden={tab !== 'environment'}><Environmental key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} reviewData={reviewData ? {...reviewData,review_progress:reviewProgress} : null}/></div>

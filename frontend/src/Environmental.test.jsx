@@ -144,7 +144,7 @@ describe('environmental evidence view', () => {
     render(<Environmental session={session} analysis={{...doc(),environmental_requirements:[row,row],environmental_mapping:[row,{...row,condition_id:'5',canonical_variable:'ais_status',routing:{preferred_provider:'EXTERNAL'},status:'EXTERNAL_EVIDENCE_REQUIRED'}]}}/>);
     expect(screen.getAllByTestId('environment-row')).toHaveLength(2);
     expect(screen.getByText(/Credentials required/)).toBeVisible();
-    expect(screen.getByText('EXTERNAL EVIDENCE REQUIRED')).toBeVisible();
+    expect(screen.getByText('REQUIRED · NOT CONFIGURED')).toBeVisible();
     await userEvent.click(screen.getAllByText('Source and retrieval notes')[0]);
     expect(screen.getAllByText('Page 2: Original synthetic requirement.')[0]).toBeVisible();
     expect(fetch).not.toHaveBeenCalled();
@@ -253,17 +253,19 @@ describe('environmental evidence view', () => {
     expect(body.start_time).toBe('2026-10-12T12:00:00Z');expect(body.end_time).toBe('2026-10-12T14:00:00Z');
   });
   it('clears fetched state on New Analysis and never adds an extraction request', async () => {
-    const fetch=vi.fn(async url=>({ok:true,json:async()=>url==='/api/session'?session:url==='/api/analyze'?doc():{requirements:[{...row,notes_for_evaluation:'FETCHED-MOCK-EVIDENCE'}]}}));vi.stubGlobal('fetch',fetch);
+    const fetch=vi.fn(async url=>({ok:true,json:async()=>url==='/api/session'?session:url==='/api/analyze'?doc():url.startsWith('/api/reviews?')?
+      {analysis_run_id:'fresh',review_progress:{total:1,resolved:1,remaining:0,complete:true},requirements:[{...row,review_state:'APPROVED',applicability:'APPLICABLE'}]}:
+      {requirements:[{...row,notes_for_evaluation:'FETCHED-MOCK-EVIDENCE'}]}}));vi.stubGlobal('fetch',fetch);
     render(<App/>);const user=userEvent.setup();
     await user.upload(screen.getByLabelText('Upload permit PDF'),new File(['%PDF'], 'test.pdf',{type:'application/pdf'}));
     await waitFor(()=>expect(screen.getByRole('button',{name:'Analyze',exact:true})).toBeEnabled());
     await user.click(screen.getByRole('button',{name:'Analyze',exact:true}));await screen.findByText('TEST-ENV');
-    expect(screen.getAllByTestId('chart')).toHaveLength(4);
+    expect(screen.getAllByTestId('chart')).toHaveLength(3);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Environmental Intelligence',exact:true})).toBeEnabled());
     await user.click(screen.getByRole('button',{name:'Environmental Intelligence',exact:true}));
     await user.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
     await waitFor(()=>expect(fetch.mock.calls.filter(([url])=>url==='/api/environmental')).toHaveLength(1));
     await user.click(screen.getByRole('button',{name:'New Analysis'}));
-    await user.click(screen.getByRole('button',{name:'Environmental Intelligence',exact:true}));
     expect(screen.queryAllByTestId('environment-row')).toHaveLength(0);
     expect(screen.queryByText('FETCHED-MOCK-EVIDENCE')).not.toBeInTheDocument();
     expect(fetch.mock.calls.filter(([url])=>url==='/api/analyze')).toHaveLength(1);
