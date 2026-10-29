@@ -1,0 +1,2 @@
+# Test-only dependencies used by the complete backend regression suite.
+openpyxl>=3.1,<4
