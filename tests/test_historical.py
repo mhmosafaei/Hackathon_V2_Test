@@ -1,5 +1,6 @@
 from datetime import datetime, timezone, date
 from pathlib import Path
+import pytest
 from src.historical.analysis import select_mode,equivalent_periods,series_stats,year_windows
 from src.historical.service import analyse_history,load_year
 
@@ -23,6 +24,7 @@ def test_historical_statistics_and_unknown_window_propagation():
  windows=year_windows(['2024-01-01T00:00:00Z','2024-01-01T01:00:00Z'],[1,None],2,quality=False)
  assert windows['unknown_hours']==2 and windows['workable_count']==0
 
+@pytest.mark.source_backed
 def test_genuine_cached_belfast_history_is_available_offline_with_masked_current_explicit():
  data=load_year(Path('.'),2024)
  assert len(data['wave']['observations'])==24 and data['weather']['model']=='era5'

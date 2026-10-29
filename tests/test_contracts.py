@@ -20,6 +20,7 @@ def test_missing_units_remain_review_required_and_do_not_become_thresholds():
  clause=extract_weather_clauses('contract-ambiguous',[PdfPage(1,'Wave height shall be acceptable for operations.')])[0]
  assert clause.threshold is None and clause.review_required and clause.ambiguity
 
+@pytest.mark.source_backed
 def test_confirmed_contract_fixture_uses_cached_forecast_and_reports_non_legal_windows():
  clauses=extract_weather_clauses('contract-analysis',[PdfPage(1,'Operations shall not proceed where significant wave height does not exceed 1.5 m.')])
  result=analyse_confirmed(Path('.'),clauses,{clauses[0].clause_id:{'state':'CONFIRMED'}})

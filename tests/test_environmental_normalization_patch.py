@@ -117,6 +117,7 @@ def test_hourly_precipitation_alias_preserves_accumulation_semantics():
     assert mapped['temporal_semantics'] == 'ACCUMULATED_OVER_INTERVAL'
 
 
+@pytest.mark.source_backed
 def test_persisted_condition_32_source_gate_stays_independent():
     path = Path('cache/simple_analysis/0a665f53ba058e48da31f094723f6e3af679699d5a1cea3658a66f4b8d96b585/c1136faddcaa4146a7f6fde5c5902d4c/analysis.json')
     analysis = json.loads(path.read_text(encoding='utf-8'))

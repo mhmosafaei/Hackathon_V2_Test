@@ -1,6 +1,8 @@
 from pathlib import Path
+import pytest
 from src.permit.decision_ui import readiness, demonstration
 
+@pytest.mark.source_backed
 def test_real_belfast_readiness_does_not_silently_authorize_unreviewed_conditions():
  view=readiness(Path('.'))
  assert view['document_id']=='ML2025054'
@@ -14,6 +16,7 @@ def test_demonstration_is_synthetic_and_has_explainable_outcomes_without_belfast
  assert {result['outcome'] for result in results}=={'FAIL','UNKNOWN'}
  assert all(result['source_text'].startswith('Synthetic') for result in results)
 
+@pytest.mark.source_backed
 def test_administrative_obligations_remain_visible():
  rows=readiness(Path('.'))['conditions']
  assert any(row['administrative'] and row['required_action'] in {'REPORT','NOTIFY','REQUEST_APPROVAL','MANUAL_CONFIRMATION'} for row in rows)
