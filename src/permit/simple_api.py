@@ -1,5 +1,6 @@
 """Loopback React host. No active analysis is restored or shared between sessions."""
 import argparse
+import os
 import asyncio
 import logging
 import json
@@ -52,6 +53,16 @@ class DecisionInput(BaseModel):
 
 def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports=None, coordinate_transport=None):
     app = FastAPI(docs_url=None, redoc_url=None)
+    @app.get('/api/health')
+    async def health():
+        return {'status': 'ok'}
+
+    def allowed_origin(request: Request):
+        origin = request.headers.get('origin')
+        if not origin:
+            return True
+        expected = os.environ.get('PERMITPULSE_ALLOWED_ORIGIN', '').rstrip('/')
+        return origin == str(request.base_url).rstrip('/') or bool(expected and origin == expected)
     app.state.boot_id = uuid4().hex
     app.state.busy = False
     app.state.analyses = {}
@@ -65,7 +76,7 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
     @app.post('/api/decision/evaluate')
     async def decision(inputs: DecisionInput, request: Request):
         origin = request.headers.get('origin')
-        if origin and origin != str(request.base_url).rstrip('/'):
+        if not allowed_origin(request):
             return JSONResponse({'error': 'Request origin rejected.'}, status_code=403)
         if request.headers.get('x-session-id') != app.state.boot_id:
             return JSONResponse({'error': 'STALE_SESSION'}, status_code=409)
@@ -98,7 +109,7 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
     @app.put('/api/reviews/bulk-approve')
     async def approve_all(request: Request):
         origin = request.headers.get('origin')
-        if origin and origin != str(request.base_url).rstrip('/'):
+        if not allowed_origin(request):
             return JSONResponse({'error': 'Request origin rejected.'}, status_code=403)
         if request.headers.get('x-session-id') != app.state.boot_id:
             return JSONResponse({'error': 'STALE_SESSION'}, status_code=409)
@@ -118,7 +129,7 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
     @app.put('/api/reviews/{target_id}')
     async def review(target_id: str, request: Request):
         origin = request.headers.get('origin')
-        if origin and origin != str(request.base_url).rstrip('/'):
+        if not allowed_origin(request):
             return JSONResponse({'error': 'Request origin rejected.'}, status_code=403)
         if request.headers.get('x-session-id') != app.state.boot_id:
             return JSONResponse({'error': 'STALE_SESSION'}, status_code=409)
@@ -140,7 +151,7 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
     @app.post('/api/coordinates/convert')
     async def coordinates(inputs: CoordinateInput, request: Request):
         origin = request.headers.get('origin')
-        if origin and origin != str(request.base_url).rstrip('/'):
+        if not allowed_origin(request):
             return JSONResponse({'error':'Request origin rejected.'}, status_code=403)
         if request.headers.get('x-session-id') != app.state.boot_id:
             return JSONResponse({'error':'Application restarted. Select your PDF again.'}, status_code=409)
@@ -193,7 +204,7 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
     @app.post('/api/restore')
     async def restore(inputs: RestoreInput, request: Request):
         origin = request.headers.get('origin')
-        if origin and origin != str(request.base_url).rstrip('/'):
+        if not allowed_origin(request):
             return JSONResponse({'error': 'Request origin rejected.'}, status_code=403)
         if request.headers.get('x-session-id') != app.state.boot_id:
             return JSONResponse({'error': 'Application restarted. Refresh the session.'}, status_code=409)
@@ -215,7 +226,7 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
     @app.post('/api/environmental')
     async def environmental(inputs: EvaluationInput, request: Request):
         origin = request.headers.get('origin')
-        if origin and origin != str(request.base_url).rstrip('/'):
+        if not allowed_origin(request):
             return JSONResponse({'error': 'Request origin rejected.'}, status_code=403)
         if request.headers.get('x-session-id') != app.state.boot_id:
             return JSONResponse({'error': 'Application restarted. Select your PDF again.'}, status_code=409)
@@ -255,7 +266,7 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
     async def run(request: Request):
         # Same-origin, no CORS; stale browser sessions cannot dispatch after restart.
         origin = request.headers.get('origin')
-        if origin and origin != str(request.base_url).rstrip('/'):
+        if not allowed_origin(request):
             return JSONResponse({'error': 'Permit analysis could not be completed.'}, status_code=403)
         if request.headers.get('x-session-id') != app.state.boot_id:
             return JSONResponse({'error': 'Application restarted. Select your PDF again.'}, status_code=409)
