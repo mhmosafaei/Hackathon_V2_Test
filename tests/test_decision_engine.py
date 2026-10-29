@@ -223,6 +223,7 @@ def test_decision_api_only_reads_review_and_session_evidence(tmp_path,monkeypatc
             body={'analysis_run_id':analysis['analysis_id'],'document_sha256':analysis['document_sha256']}
             assert (await client.post('/api/decision/evaluate',json=body)).status_code==409
             response=await client.post('/api/decision/evaluate',headers={'x-session-id':app.state.boot_id},json=body)
-            assert response.status_code==200 and response.json()['current_assessment']['status']=='UNKNOWN'
-            assert app.state.decisions[analysis['analysis_id']]['assessment_id']==response.json()['assessment_id']
+            assert response.status_code==409 and response.json()['error']=='HUMAN_REVIEW_INCOMPLETE'
+            assert response.json()['review_progress']['remaining']>0
+            assert analysis['analysis_id'] not in app.state.decisions
     asyncio.run(check());assert path.read_bytes()==before

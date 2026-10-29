@@ -34,7 +34,8 @@ describe('simple session dashboard', () => {
     expect(within(navigation).getByRole('button', {name: 'Permit Intelligence'})).toBeVisible();
     expect(within(navigation).getByRole('button', {name: 'Environmental Intelligence'})).toBeVisible();
     expect(within(navigation).getByRole('button', {name: 'Human Review'})).toBeVisible();
-    expect(within(navigation).getByRole('button', {name: 'Decision & Work Windows'})).toBeVisible();
+    expect(within(navigation).getByRole('button', {name: 'Decision & Work Windows'})).toBeDisabled();
+    expect(within(navigation).getAllByRole('button').map(button=>button.textContent)).toEqual(expect.arrayContaining(['1Permit IntelligenceCurrent','2Human ReviewLocked','3Environmental IntelligenceLocked','4Decision & Work WindowsLocked']));
     const longName = 'very-long-permit-document-name-that-needs-a-readable-clamp.pdf';
     render(<Results analysis={{...fixture(), filename: longName}}/>);
     expect(screen.getByTitle(longName)).toHaveAttribute('title', longName);

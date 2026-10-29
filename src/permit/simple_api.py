@@ -74,7 +74,11 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
             return JSONResponse({'error': 'ACTIVE_ANALYSIS_IDENTITY_MISMATCH'}, status_code=409)
         try:
             from .decision_engine import assess
-            result = assess(list_reviews(root, analysis), app.state.environmental_results.get(inputs.analysis_run_id),
+            reviews = list_reviews(root, analysis)
+            if not reviews['review_progress']['complete']:
+                return JSONResponse({'error': 'HUMAN_REVIEW_INCOMPLETE',
+                                     'review_progress': reviews['review_progress']}, status_code=409)
+            result = assess(reviews, app.state.environmental_results.get(inputs.analysis_run_id),
                 start=inputs.start, horizon_hours=inputs.horizon_hours, duration_hours=inputs.duration_hours,
                 include_conditional=inputs.include_conditional, ranking=inputs.ranking)
             app.state.decisions[inputs.analysis_run_id] = result
