@@ -154,6 +154,29 @@ test('mount never dispatches and errors are visible without retry',async()=>{con
 test('unavailable backend gives actionable 404 message without retry',async()=>{const mocked=vi.fn().mockResolvedValue({ok:false,status:404});vi.stubGlobal('fetch',mocked);render(<DecisionWorkWindows analysis={analysis} session={{boot_id:'boot'}}/>);fireEvent.click(screen.getByText('Evaluate existing evidence'));expect(await screen.findByRole('alert')).toHaveTextContent('Restart the backend with the Decision API enabled');expect(mocked).toHaveBeenCalledTimes(1);});
 test('draft controls do not relabel evaluated results',async()=>{await show();fireEvent.change(screen.getByLabelText('Timeline horizon'),{target:{value:'24'}});fireEvent.click(screen.getByRole('button',{name:'2 h'}));expect(screen.getByRole('status')).toHaveTextContent('72-hour horizon / 4-hour minimum duration');expect(screen.getByText('72-hour decision timeline')).toBeTruthy();expect(screen.getByText('Interval details')).toBeTruthy();expect(screen.getByText('Operational assessment')).toBeTruthy();});
 test('selected native measurements are shown without invented metrics',async()=>{await show({...payload,current_assessment:{...interval,rule_results:[{...rule,checks:[{values:[{value:1.2,unit:'m',valid_time:interval.start}]}]}]}});expect(screen.getByText('1.2 m')).toBeTruthy();expect(screen.getByText('Recorded native values')).toBeTruthy();});
+test('formats inspector measurements but preserves reviewed thresholds and coordinates',async()=>{
+  const measured={...rule,effective_rule:{...rule.effective_rule,threshold:8.1234567},
+    checks:[{operator:'>',threshold:8.1234567,unit:'m',values:[{value:1.23456,unit:'m',valid_time:interval.start}]}],
+    evidence_references:[{evidence_id:'native-1',provider:'COPERNICUS_MARINE',dataset_id:'synthetic',
+      dataset_variable:'VHM0',latitude:54.123456,longitude:-6.654321,distance_km:12.34567,
+      selected_depth_m:5.55555,temporal_resolution:'PT1H',spatial_resolution:'synthetic'}]};
+  const reviewedThreshold={...rule,requirement_id:'env-threshold',
+    effective_rule:{...rule.effective_rule,threshold:9.87654321},checks:[]};
+  const cell={...interval,rule_results:[measured,reviewedThreshold]};
+  await show({...payload,current_assessment:cell,timeline:[cell]});
+  fireEvent.click(screen.getByRole('button',{name:/UNKNOWN 2026-10-14T00:00:00Z/}));
+
+  const inspector=screen.getByText('Constraint inspector').closest('section');
+  expect(inspector.textContent).toContain('1.235 m');
+  expect(inspector.textContent).toContain('12.346 km');
+  expect(inspector.textContent).toContain('5.556 m');
+  expect(inspector.textContent).toContain('54.123456, -6.654321');
+  expect(inspector.textContent).toContain('> 8.1234567 m triggers');
+  expect(inspector.textContent).toContain('> 9.87654321 m');
+  for(const unrounded of ['1.23456','12.34567','5.55555']) {
+    expect(document.body.textContent).not.toContain(unrounded);
+  }
+});
 test('reference sections keep real selectable windows and a separate inspector',async()=>{await show({...payload,candidate_windows:[{...interval,duration_hours:6,type:'CONDITIONAL'}]});const window=screen.getByRole('button',{name:/CONDITIONAL \/ UNKNOWN/});fireEvent.click(window);expect(window).toHaveAttribute('aria-pressed','true');expect(screen.getByText('Selected window details').closest('section')).toHaveClass('decision-selected');expect(screen.getByText('Constraint inspector').closest('section')).toHaveClass('decision-inspector');expect(screen.getByText('Work-window finder').closest('section')).toHaveClass('decision-finder');expect(screen.queryByText(/Demonstration: authorized/)).toBeNull();});
 test('MVP gating and audit-only requirements are visibly separated',async()=>{await show({...payload,current_assessment:{...interval,rule_results:[rule,{...rule,requirement_id:'audit-only',gating:false,reason_code:'OUT_OF_SCOPE_FOR_MVP_DECISION'}]}});expect(screen.getByText('Gating constraints & time / position prerequisites')).toBeTruthy();expect(screen.getByText('Non-gating requirements · retained for audit')).toBeTruthy();expect(screen.getByText(/they are not legally irrelevant/)).toBeTruthy();});
 
