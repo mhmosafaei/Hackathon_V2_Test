@@ -194,11 +194,6 @@ def test_api_fetch_is_explicit_isolated_and_restart_empty(tmp_path):
         r=requirement(); [r.pop(k) for k in ['source_verified','review_state','executable']]
         r['source_spans']=[{'page':1,'quotation':packet['pages'][0].text.strip()}]
         result['environmental_requirements']=[r]
-        result['environmental_extraction']={
-            'candidate_count':1,'returned_record_count':1,'extracted_count':1,
-            'missing_count':0,'candidate_conditions':['1'],'extracted_conditions':['1'],
-            'missing_conditions':[],'incomplete_records':[],'complete':True,
-        }
         return result
     def provider(request): providers.append(1); return mock_evidence(request)
     client=TestClient(create_app(tmp_path,transport=transport,environmental_transports={'COPERNICUS_MARINE':provider}))
