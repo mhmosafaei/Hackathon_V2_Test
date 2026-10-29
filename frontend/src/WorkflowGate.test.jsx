@@ -37,7 +37,7 @@ it('unlocks after review, keeps review editable, and marks later changes stale',
   const nav=screen.getByRole('navigation',{name:'Primary navigation'});
   expect(within(nav).getByRole('button',{name:'Environmental Intelligence'})).toBeDisabled();
   expect(within(nav).getByRole('button',{name:'Decision & Work Windows'})).toBeDisabled();
-  expect(screen.getByText('Understand the permit')).toBeVisible();
+  expect(screen.getByText('Review key permit details and limits here.')).toBeVisible();
   await user.click(within(nav).getByRole('button',{name:'Human Review'}));
   expect(screen.getByText('Check the interpretation')).toBeVisible();
   await user.click(screen.getByRole('button',{name:'Complete review'}));

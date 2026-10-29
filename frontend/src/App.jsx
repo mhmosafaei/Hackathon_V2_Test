@@ -5,12 +5,12 @@ import DecisionWorkWindows from './DecisionWorkWindows.jsx';
 import './WorkflowStepper.css';
 import brandLogo from './assets/permitpulse-logo.png';
 import brandWordmark from './assets/permitpulse-wordmark.png';
-import {ArrowUpRight, FileText, Upload, Plus, Search, LoaderCircle, AlertCircle, ChevronDown, Waves, Leaf, Users, CalendarDays, Bell, UserCircle, Eye, Download, Printer, Link2, ExternalLink, BarChart3, Info, CheckCircle2, AlertTriangle, Wind, Droplets, Thermometer, Gauge, ArrowRight, ArrowUp, MoveHorizontal, Clock3, PieChart as PieChartIcon, ListChecks, Hash, UserRound, Building2, Anchor, ClipboardList, Shield, MapPin, Settings2} from 'lucide-react';
+import {ArrowUpRight, FileText, Upload, Plus, LoaderCircle, AlertCircle, ChevronDown, Waves, Leaf, Users, CalendarDays, Eye, BarChart3, Info, AlertTriangle, Wind, Droplets, Thermometer, Gauge, ArrowRight, ArrowUp, MoveHorizontal, Clock3, PieChart as PieChartIcon, ListChecks} from 'lucide-react';
 import {BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell} from 'recharts';
 
 export const phases = ['PRIOR', 'DURING', 'AFTER', 'GENERAL'];
 export const categories = ['Notification / Deadline', 'Positioning / Geographic', 'Monitoring / Survey', 'Reporting / Recordkeeping', 'Operational / Safety', 'Approval / Administrative', 'Other'];
-const colors = ['#167b88', '#193e57', '#72b5ae', '#bacbd0'];
+const colors = ['#1769a5', '#0b2853', '#68a8d5', '#b7d4e9'];
 const pretty = s => s[0] + s.slice(1).toLowerCase();
 export function chartData(conditions) {
   return {
@@ -42,14 +42,14 @@ function GeofenceCard({geofences}) {
     </article>)}</div>
   </details></section>;
 }
-function Chart({title, data, type, index}) {
-  return <section className="card chart-card" aria-label={title} data-testid="chart"><div className="section-heading"><h3>{title}</h3><span className="eyebrow">CONDITIONS</span></div>
+function Chart({title, label, data, type, index}) {
+  return <section className="card chart-card" aria-label={label} data-testid="chart"><div className="section-heading"><h3>{title}</h3><span className="eyebrow">CONDITIONS</span></div>
     <div className="chart-area"><ResponsiveContainer width="100%" height="100%">
       {type === 'bar' ? <BarChart data={data} layout={index === 1 ? 'vertical' : 'horizontal'} margin={{top: 10, right: 25, left: index === 1 ? 5 : 0, bottom: 5}}>
         <CartesianGrid strokeDasharray="3 3" horizontal={index !== 1} vertical={index === 1} stroke="#e6edef"/>
         <XAxis type={index === 1 ? 'number' : 'category'} dataKey={index === 1 ? undefined : 'name'} allowDecimals={false} axisLine={false} tickLine={false} fontSize={12}/>
         <YAxis type={index === 1 ? 'category' : 'number'} dataKey={index === 1 ? 'name' : undefined} width={index === 1 ? 164 : 30} allowDecimals={false} axisLine={false} tickLine={false} fontSize={11}/>
-        <Tooltip cursor={{fill: '#f1f6f6'}}/><Bar dataKey="value" name="Conditions" fill="#167b88" radius={[4, 4, 4, 4]} maxBarSize={38} isAnimationActive={false}/>
+        <Tooltip cursor={{fill: '#f1f6f6'}}/><Bar dataKey="value" name="Conditions" fill="#1769a5" radius={[4, 4, 4, 4]} maxBarSize={38} isAnimationActive={false}/>
       </BarChart> : <PieChart><Pie data={data} dataKey="value" nameKey="name" innerRadius={62} outerRadius={93} paddingAngle={2} isAnimationActive={false}>
         {data.map((d, i) => <Cell key={d.name} fill={colors[i % colors.length]}/>)}</Pie><Tooltip/></PieChart>}
     </ResponsiveContainer></div>
@@ -97,8 +97,14 @@ function WorkflowGuide({tab, access, reviewProgress, environmentHandled, onStep,
     </div>
   </section>;
 }
-function DocumentActions() {
-  return <div className="document-actions" aria-label="Document actions"><button title="View original document"><Eye size={16}/><span>View</span></button><button title="Download document"><Download size={16}/><span>Download</span></button><button title="Print document"><Printer size={16}/><span>Print</span></button><button title="Copy document link"><Link2 size={16}/><span>Copy link</span></button><button title="Open in new tab"><ExternalLink size={16}/><span>Open</span></button></div>;
+function limitTitle(label) {
+  return String(label || '').replace(/\s+STOP(?:\s+(?:limit|threshold))?\b/ig, '').trim() || 'Permit limit';
+}
+function limitValue(label, value) {
+  const text = String(value ?? '').trim();
+  const name = limitTitle(label);
+  const prefix = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\s|[:–—-]|$)\\s*[:–—-]?\\s*`, 'i');
+  return text.replace(prefix, '').trim() || text;
 }
 const parameterIconEntries = [
   ['wave height', Waves], ['significant wave', Waves], ['wave period', Clock3], ['mean wave', Clock3],
@@ -111,43 +117,43 @@ export function EnvironmentalParameterIcon({label}) {
   const [, Icon] = parameterIconEntries.find(([term]) => normalized.includes(term)) || [];
   const Component = Icon || Gauge;
   if (normalized.includes('dissolved oxygen') || normalized.includes('oxygen')) return <span className="limit-icon oxygen-icon" aria-hidden="true">O<sub>2</sub></span>;
-  if (normalized.includes('gust')) return <span className="limit-icon gust-icon" aria-hidden="true"><Wind size={19}/><i/><i/></span>;
   return <span className="limit-icon" aria-hidden="true"><Component size={19}/></span>;
 }
-const metadataIcons = { 'Permit number': Hash, Licensee: UserRound, 'Issuing authority': Building2, Validity: CalendarDays, Activity: Anchor, 'Total conditions': ClipboardList };
-function MetadataIcon({label}) { const Icon = metadataIcons[label] || Info; return <span className="metadata-icon" aria-hidden="true"><Icon size={18}/></span>; }
-const categoryIcons = {'Environmental / Limit': Leaf, 'Operational / Safety': Shield, 'Vessel': Anchor, 'Positioning / Geographic': MapPin, 'Monitoring / Survey': ClipboardList, 'Technical': Settings2, 'Administrative': FileText, Other: Info};
-function CategoryIcon({category}) { const Icon = categoryIcons[category] || Info; return <Icon className="category-icon" size={14} aria-hidden="true"/>; }
 function ChartIcon({index, type}) {
   const Icon = type === 'pie' ? PieChartIcon : index === 1 ? ListChecks : BarChart3;
   return <Icon size={19} aria-hidden="true"/>;
 }
-export function Results({analysis,reviewData,onReview}) {
-  const [search, setSearch] = useState('');
-  const [phase, setPhase] = useState('ALL');
+function ScrollDownCue({active, analysisId}) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!active) { setVisible(false); return; }
+    const update = () => setVisible(document.documentElement.scrollHeight - window.scrollY - window.innerHeight > 80);
+    update();
+    const frame = window.requestAnimationFrame(update);
+    window.addEventListener('scroll', update, {passive:true});
+    window.addEventListener('resize', update);
+    return () => { window.cancelAnimationFrame(frame); window.removeEventListener('scroll', update); window.removeEventListener('resize', update); };
+  }, [active, analysisId]);
+  if (!visible) return null;
+  return <button type="button" className="permit-scroll-cue" aria-label="Scroll down for more permit information" title="Scroll down" onClick={() => window.scrollBy({top:Math.max(320, Math.round(window.innerHeight * .75)), behavior:'smooth'})}><ChevronDown size={30}/></button>;
+}
+export function Results({analysis,reviewData,onReview,active=true}) {
   const data = chartData(analysis.conditions);
-  const shown = analysis.conditions.filter(c => (phase === 'ALL' || c.phase === phase) && `${c.number} ${c.requirement} ${c.category} ${c.important_limit || ''} ${c.timing || ''}`.toLowerCase().includes(search.toLowerCase()));
   const unverified = analysis.conditions.filter(c => !c.source_verified).length;
   const summary = analysis.summary;
-  const reviewRows = reviewData?.requirements || [];
   const progress = reviewData?.review_progress;
   return <>
-    <section className="overview-hero"><div className="page-heading"><div><div className="eyebrow">MARITIME PERMIT INTELLIGENCE</div><h1>Permit Intelligence</h1><h2>Your permit, at a glance.</h2><p>AI-powered extraction and analysis of key permit details, conditions and obligations.</p></div><span className="status"><AlertTriangle size={15}/> {progress?.complete ? 'Human review complete' : 'Human review required'} <ArrowUpRight size={14}/></span></div><div className="document-strip"><div className="document-identity"><span className="document-icon"><FileText size={25}/></span><div><div className="eyebrow">PERMIT DOCUMENT</div><strong className="document-filename" title={analysis.filename}>{analysis.filename}</strong><small>{analysis.page_count} pages <span className="dot">·</span> Run {analysis.analysis_id}</small></div></div><div className="extraction-state"><CheckCircle2 size={27}/><div><div className="eyebrow">EXTRACTION STATUS</div><strong>{analysis.restoration_status === 'INCOMPLETE' ? 'Extraction incomplete' : 'Extraction completed'}</strong><small>{analysis.restored_from_persistence ? 'Restored from persisted analysis.' : 'All returned information is structured.'}</small></div></div><DocumentActions/></div></section>
-    <div className="notice" role="status">Human Review: {progress ? `${progress.resolved} of ${progress.total} items resolved; ${progress.remaining} remaining` : 'loading review status'}. <button type="button" className="decision-link" onClick={()=>onReview?.()}>Open Human Review</button></div>
+    <div className="permit-intro-screen"><section className="overview-hero permit-overview"><div className="page-heading"><div><div className="eyebrow">STEP 1 OF 4</div><h1>Permit Intelligence</h1><p>Review key permit details and limits here.</p><strong className="document-filename" title={analysis.filename}>{analysis.filename}</strong>{analysis.restoration_status === 'INCOMPLETE' && <p className="permit-extraction-warning" role="alert">Extraction incomplete — review the returned information and any missing fields.</p>}</div><div className="permit-hero-actions"><nav className="permit-quick-nav" aria-label="Permit section shortcuts"><button type="button" onClick={()=>document.getElementById('key-permit-limits')?.scrollIntoView({behavior:'smooth',block:'start'})}>Key Permit Limits</button><button type="button" onClick={()=>document.getElementById('condition-overview')?.scrollIntoView({behavior:'smooth',block:'start'})}>Condition Overview</button></nav><div className="permit-review-action" role="status"><span>{progress ? `Human Review: ${progress.resolved} of ${progress.total} complete` : 'Human Review: loading status'}</span><button type="button" className="button primary" onClick={()=>onReview?.()}>Next: Human Review <ArrowUpRight size={16}/></button></div></div></div></section>
     {analysis.mode === 'MOCK' && <div className="notice">Synthetic demonstration · These are mocked records, not extracted Kilkeel evidence.</div>}
-    <div className="summary-grid">{[['Permit number', summary.permit_number], ['Licensee', summary.licensee], ['Issuing authority', summary.authority], ['Validity', `${fallback(summary.valid_from)} — ${fallback(summary.valid_until)}`], ['Activity', summary.activity], ['Total conditions', analysis.conditions.length]].map(([label, value]) => <section className="card metric" key={label}><MetadataIcon label={label}/><div className="eyebrow">{label}</div><strong>{fallback(value)}</strong></section>)}<GeofenceCard geofences={analysis.geofences}/></div>
-    <section className="card limits"><div className="section-heading"><div><h2><BarChart3 size={19}/> Key Permit Limits</h2><p>Important values and deadlines identified in the document.</p></div><button className="expand-button" type="button"><span>Expand all limits</span><ChevronDown size={16}/></button></div>
-      {analysis.key_limits.length ? <div className="limits-grid">{analysis.key_limits.map((l, i) => { const sourceState = typeof l.source_verified === 'boolean' ? l.source_verified : null; const stop = /\bstop\b/i.test(`${l.label} ${l.value}`); const title = String(l.label || '').replace(/\s+STOP(?:\s+limit)?\b/ig, '').trim() || l.label; return <div key={i} className={`limit ${stop ? 'limit-stop' : ''}`}><EnvironmentalParameterIcon label={l.label}/><div className="limit-copy"><strong>{title}</strong>{stop && <span className="stop-label"><AlertTriangle size={12}/> Permit-defined STOP threshold</span>}<b>{l.value}</b>{sourceState === true && <small className="source-verified"><CheckCircle2 size={13}/> Source quotation verified</small>}{sourceState === false && <small><Info size={13}/> Source verification required</small>}</div></div>; })}</div> : <p className="muted">No key limits returned. Review the original permit for completeness.</p>}
+    <section className="card permit-basic-information"><div className="section-heading"><h2><Info size={19}/> Basic Information</h2></div><div className="summary-grid permit-summary-grid">{[['Permit number', summary.permit_number], ['Validity', `${fallback(summary.valid_from)} — ${fallback(summary.valid_until)}`], ['Activity', summary.activity], ['Licensee', summary.licensee], ['Issuing authority', summary.authority], ['Total conditions', analysis.conditions.length]].map(([label, value]) => <section className="card metric" key={label}><div className="eyebrow">{label}</div><strong>{fallback(value)}</strong></section>)}</div></section>
+    <GeofenceCard geofences={analysis.geofences}/></div>
+    <section className="card limits" id="key-permit-limits"><div className="section-heading"><div><h2><BarChart3 size={19}/> Key Permit Limits</h2></div></div>
+      {analysis.key_limits.length ? <div className="limits-grid">{analysis.key_limits.map((l, i) => { const sourceState = typeof l.source_verified === 'boolean' ? l.source_verified : null; const stop = /\bstop\b/i.test(`${l.label} ${l.value}`); const title = limitTitle(l.label); return <div key={i} className={`limit ${stop ? 'limit-stop' : ''}`}><EnvironmentalParameterIcon label={l.label}/><div className="limit-copy"><strong>{title}{stop && <span className="limit-title-stop"> · STOP threshold</span>}</strong><b>{limitValue(l.label, l.value)}</b>{sourceState === false && <small><Info size={13}/> Source verification required</small>}{sourceState === null && <small><Info size={13}/> Source status not stated</small>}</div></div>; })}</div> : <p className="muted">No key limits returned. Review the original permit for completeness.</p>}
     </section>
     {!!analysis.warnings?.length && <div className="notice warning">{analysis.warnings.map(w => <p key={w}>{w}</p>)}</div>}
-    {!!unverified && <div className="notice warning">{unverified} condition{unverified === 1 ? ' requires' : 's require'} source verification. Exact quotations remain available below.</div>}
-    <section className="card conditions"><div className="section-heading"><div><h2>Permit conditions <span className="count">{analysis.conditions.length}</span></h2><p>Every returned condition, with its original source reference</p></div><span className="eyebrow">{progress?.complete ? 'REVIEW COMPLETE' : 'REVIEW IN PROGRESS'}</span></div>
-      <div className="table-tools"><label className="search"><Search size={17}/><input aria-label="Search conditions" placeholder="Search conditions, limits or categories…" value={search} onChange={e => setSearch(e.target.value)}/></label><select aria-label="Filter phase" value={phase} onChange={e => setPhase(e.target.value)}><option value="ALL">All phases</option>{phases.map(p => <option key={p}>{p}</option>)}</select><span>{shown.length} of {analysis.conditions.length} conditions</span></div>
-      <div className="table-scroll"><table><thead><tr>{['#', 'Phase', 'Requirement', 'Important Limit / Timing', 'Category', 'Page'].map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{shown.map(c => <tr key={c.number} data-testid="condition-row"><td className="number">{c.number}</td><td><span className={`badge phase-${c.phase.toLowerCase()}`}>{pretty(c.phase)}</span></td><td className="requirement">{c.requirement}<details><summary><ChevronDown size={13}/> Source evidence · {c.source_verified ? <><CheckCircle2 size={12}/> quote verified</> : <><AlertTriangle size={12}/> verification required</>}</summary>{c.source_spans.map((s, i) => <blockquote key={i}><b>Physical page {s.page}</b><p>{s.quotation}</p></blockquote>)}</details></td><td>{c.important_limit && <p>{c.important_limit}</p>}{c.timing && <p>{c.timing}</p>}{!c.important_limit && !c.timing && <span className="muted">Not stated</span>}</td><td><span className="category"><CategoryIcon category={c.category}/>{c.category}</span></td><td>{[...new Set(c.source_spans.map(s => s.page))].join(', ') || 'Unresolved'}{reviewRows.filter(r=>r.kind==='condition' && String(r.condition_id)===String(c.number)).map(r=><div key={r.target_id}><small>{r.state==='APPROVED'||r.state==='CORRECTED' ? 'Reviewed' : 'Review needed'}</small> <button type="button" className="decision-link" onClick={()=>onReview?.(r.target_id)}>Review</button></div>)}</td></tr>)}</tbody></table></div>
-      {!shown.length && <p className="no-results">No conditions match these filters.</p>}
-    </section>
-    <div className="chart-grid"><Chart title={<><ChartIcon index={0} type="bar"/>Conditions by Phase</>} data={data.phase} type="bar" index={0}/><Chart title={<><ChartIcon index={1} type="bar"/>Conditions by Requirement Type</>} data={data.category} type="bar" index={1}/><Chart title={<><ChartIcon type="pie"/>Permit Conditions by Phase</>} data={data.phase} type="pie"/><Chart title={<><ChartIcon type="pie"/>Conditions with Explicit Limits</>} data={data.limits} type="pie"/></div>
-    <footer className="safety"><AlertTriangle size={22}/><p><strong>AI-extracted permit information. Review against the original licence before operational use.</strong><br/><span>Human review and environmental evidence do not issue operational authorization.</span></p></footer>
+    {!!unverified && <div className="notice warning">{unverified} condition{unverified === 1 ? ' requires' : 's require'} source verification. Review the original quotations in Human Review. <button type="button" className="decision-link" onClick={()=>onReview?.()}>Next: Open Human Review</button></div>}
+    <section className="card permit-chart-section" id="condition-overview"><div className="section-heading"><h2><PieChartIcon size={19}/> Condition Overview</h2></div><div className="chart-grid"><Chart label="Conditions by Phase" title={<><ChartIcon index={0} type="bar"/>Conditions by Phase</>} data={data.phase} type="bar" index={0}/><Chart label="Conditions by Requirement Type" title={<><ChartIcon index={1} type="bar"/>Conditions by Requirement Type</>} data={data.category} type="bar" index={1}/><Chart label="Conditions with Explicit Limits" title={<><ChartIcon type="pie"/>Conditions with Explicit Limits</>} data={data.limits} type="pie"/></div></section>
+    <ScrollDownCue active={active} analysisId={analysis.analysis_id}/>
   </>;
 }
 export default function App() {
@@ -253,13 +259,13 @@ export default function App() {
       setStatus('error'); setError(cause?.message || 'Permit analysis could not be completed.');
     }
   }
-  return <div className="app"><header className="header"><div className="brand"><img className="brand-symbol" src={brandLogo} alt=""/><div><img className="brand-wordmark" src={brandWordmark} alt="PermitPulse"/><span>Evidence first. Human review always.</span></div></div><AppNav tab={tab} setTab={setTab} access={access} completed={completed}/><div className="header-actions"><button className="icon-button" aria-label="Notifications"><Bell size={18}/><i className="notification-dot"/></button><button className="profile-button" aria-label="User profile"><UserCircle size={25}/><span>JD</span><ChevronDown size={14}/></button></div><button className="button secondary new-analysis" onClick={reset} disabled={status === 'loading'}><Plus size={16}/> New Analysis</button></header>
-    <main>
-    <WorkflowGuide tab={tab} access={access} reviewProgress={reviewProgress} environmentHandled={environmentHandled} onStep={setTab} onContinueWithoutEvidence={acknowledgeEvidenceGap}/>
+  return <div className="app"><header className="header"><div className="brand"><img className="brand-symbol" src={brandLogo} alt=""/><div><img className="brand-wordmark" src={brandWordmark} alt="PermitPulse"/><span>Evidence first. Human review always.</span></div></div><AppNav tab={tab} setTab={setTab} access={access} completed={completed}/><button className="button secondary new-analysis" onClick={reset} disabled={status === 'loading'}><Plus size={16}/> New Analysis</button></header>
+    <main className={tab === 'permit' && currentAnalysis ? 'main-permit-result' : undefined}>
+    {(tab !== 'permit' || !currentAnalysis) && <WorkflowGuide tab={tab} access={access} reviewProgress={reviewProgress} environmentHandled={environmentHandled} onStep={setTab} onContinueWithoutEvidence={acknowledgeEvidenceGap}/>}
     {tab === 'decision' && access.decision && <DecisionWorkWindows key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={assessmentStale ? {...session,decision_result:null} : session} reviewReady={reviewComplete} reviewProgress={reviewProgress} assessmentStale={assessmentStale} onEvaluated={decision=>{setAssessmentStale(false);setSession(previous=>previous ? {...previous,decision_result:decision,invalidated_assessment_id:null} : previous);}} onReview={id=>{setReviewTarget(id);setTab('review');}}/>}
     {tab === 'review' && <HumanReview key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} initialTargetId={reviewTarget} onUpdated={updateReview} onLoaded={setReviewData}/>}
     <div hidden={tab !== 'environment'}><Environmental key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} reviewData={reviewData ? {...reviewData,review_progress:reviewProgress} : null}/></div>
-    <div hidden={tab !== 'permit'}>{currentAnalysis ? <Results analysis={currentAnalysis} reviewData={reviewData ? {...reviewData,review_progress:reviewProgress} : null} onReview={id=>{setReviewTarget(id);setTab('review');}}/> : <>
+    <div hidden={tab !== 'permit'}>{currentAnalysis ? <Results analysis={currentAnalysis} reviewData={reviewData ? {...reviewData,review_progress:reviewProgress} : null} active={tab === 'permit'} onReview={id=>{setReviewTarget(id);setTab('review');}}/> : <>
       <div className="empty-heading"><div className="eyebrow">CLARITY BEFORE YOU OPERATE</div><h1>Analyze a Marine Permit</h1><p>Upload a PDF to extract its conditions, deadlines,<br className="desktop-break"/> operational limits and key compliance requirements.</p></div>
       <section className="upload-card card"><div className="upload-icon">{status === 'loading' ? <LoaderCircle className="spinner" size={30}/> : <Upload size={30}/>}</div>
         {status === 'loading' ? <div role="status"><h2>Analyzing permit…</h2><p>Reading your document and extracting conditions, limits and deadlines.</p><div className="progress-track"><div/></div><small>Preparing your dashboard. Please keep this window open.</small></div> : <>

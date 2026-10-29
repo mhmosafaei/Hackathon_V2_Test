@@ -46,6 +46,30 @@ describe('simple session dashboard', () => {
     const wordmark=screen.getByRole('img',{name:'PermitPulse'});
     expect(wordmark).toHaveAttribute('src',expect.stringContaining('permitpulse-wordmark.png'));
     expect(document.querySelector('.brand-symbol')).toHaveAttribute('src',expect.stringContaining('permitpulse-logo.png'));
+    expect(screen.queryByRole('button',{name:'Notifications'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'User profile'})).not.toBeInTheDocument();
+  });
+  it('orders six compact permit facts before limits', () => {
+    const {container}=render(<Results analysis={fixture()}/>);
+    expect(screen.getByRole('heading',{name:'Basic Information'})).toBeVisible();
+    expect(screen.getByRole('heading',{name:'Condition Overview'})).toBeVisible();
+    expect(screen.getByRole('button',{name:/Next: Human Review/})).toBeVisible();
+    expect([...container.querySelectorAll('.permit-summary-grid .eyebrow')].map(el=>el.textContent)).toEqual([
+      'Permit number','Validity','Activity','Licensee','Issuing authority','Total conditions'
+    ]);
+    expect(screen.queryByText('AI-extracted permit information. Review against the original licence before operational use.')).not.toBeInTheDocument();
+  });
+  it('keeps permit limits compact without hiding unverified sources', () => {
+    render(<Results analysis={{...fixture(), key_limits:[
+      {label:'Wind gust STOP threshold',value:'Wind gust > 18 m/s',source_verified:true},
+      {label:'Mean wave period',value:'Mean wave period > 8 s',source_verified:false}
+    ]}}/>);
+    expect(screen.getByText('Wind gust')).toHaveTextContent('STOP threshold');
+    expect(screen.getByText('> 18 m/s')).toBeVisible();
+    expect(screen.getByText('> 8 s')).toBeVisible();
+    expect(screen.getByText('Source verification required')).toBeVisible();
+    expect(screen.queryByText('Source quotation verified')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Document actions')).not.toBeInTheDocument();
   });
   it('starts empty and never restores a previous analysis', async () => {
     localStorage.setItem('lastAnalysis', JSON.stringify(fixture())); const fetch = network(); render(<App/>);
@@ -54,18 +78,19 @@ describe('simple session dashboard', () => {
     expect(screen.queryByText('DEMO-2026')).not.toBeInTheDocument();
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
   });
-  it('uploads once, renders all 22 conditions and exactly four charts, then resets', async () => {
+  it('uploads once, shows three distinct summary charts, then resets', async () => {
     const fetch = network(); render(<App/>); const user = await upload();
     await user.click(screen.getByRole('button', {name: 'Analyze', exact: true}));
     await screen.findByText('DEMO-2026');
-    expect(screen.getAllByTestId('condition-row')).toHaveLength(22);
-    expect(screen.getAllByTestId('chart')).toHaveLength(4);
-    expect(screen.getByText('1 condition requires source verification. Exact quotations remain available below.')).toBeVisible();
+    expect(screen.queryByRole('heading',{name:'Permit conditions'})).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('chart')).toHaveLength(3);
+    expect(screen.getByText(/1 condition requires source verification/)).toHaveTextContent('Review the original quotations in Human Review.');
+    expect(screen.getByRole('button',{name:'Next: Open Human Review'})).toBeVisible();
     expect(document.querySelector('pre')).toBeNull();
     expect(fetch.mock.calls.filter(([url]) => url === '/api/analyze')).toHaveLength(1);
     expect(fetch.mock.calls.every(([url]) => !String(url).includes('stage'))).toBe(true);
     await user.click(screen.getByRole('button', {name: 'New Analysis'}));
-    expect(screen.queryAllByTestId('condition-row')).toHaveLength(0);
+    expect(screen.queryAllByTestId('chart')).toHaveLength(0);
     expect(screen.getByRole('button', {name: 'Analyze', exact: true})).toBeDisabled();
   });
   it('derives chart totals locally with fixed phase/category denominators', () => {
@@ -74,15 +99,13 @@ describe('simple session dashboard', () => {
     expect(d.category.map(v => v.value)).toEqual([4, 3, 3, 3, 3, 3, 3]);
     expect(d.limits.map(v => v.value)).toEqual([8, 14]);
   });
-  it('searches and filters without hiding chart population definitions', async () => {
+  it('shows each chart topic once in the permit overview', async () => {
     network(); render(<App/>); const user = await upload(); await user.click(screen.getByRole('button', {name: 'Analyze', exact: true}));
     await screen.findByText('DEMO-2026');
-    await user.selectOptions(screen.getByLabelText('Filter phase'), 'PRIOR');
-    expect(screen.getAllByTestId('condition-row')).toHaveLength(6);
-    await user.selectOptions(screen.getByLabelText('Filter phase'), 'ALL');
-    expect(screen.getAllByTestId('condition-row')).toHaveLength(22);
-    await user.type(screen.getByLabelText('Search conditions'), 'not a matching requirement');
-    expect(screen.getByText('No conditions match these filters.')).toBeVisible();
+    expect(screen.getByRole('heading', {name: 'Conditions by Phase'})).toBeVisible();
+    expect(screen.getByRole('heading', {name: 'Conditions by Requirement Type'})).toBeVisible();
+    expect(screen.getByRole('heading', {name: 'Conditions with Explicit Limits'})).toBeVisible();
+    expect(screen.queryByText('Permit Conditions by Phase')).not.toBeInTheDocument();
   });
   it('shows a loading state and a safe error without retrying automatically', async () => {
     let finish;
@@ -114,12 +137,11 @@ const geographicFixture = () => ({name: 'Example disposal area', description: 'E
   source_spans: [{page: 2, quotation: 'Disposal permitted only within the defined area.'}]});
 
 describe('geofence at a glance', () => {
-  it('appears for an explicit restriction while preserving the table and four charts', () => {
+  it('appears for an explicit restriction while preserving the three charts', () => {
     render(<Results analysis={{...fixture(), geofences: [geographicFixture()]}}/>);
     expect(screen.getByTestId('geofence-card')).toBeVisible();
     expect(screen.getByTestId('geofence-summary')).toHaveTextContent('Example disposal area · 0.5 NM radius');
-    expect(screen.getAllByTestId('condition-row')).toHaveLength(22);
-    expect(screen.getAllByTestId('chart')).toHaveLength(4);
+    expect(screen.getAllByTestId('chart')).toHaveLength(3);
   });
   it('is absent for no explicit restriction, including older results without the field', () => {
     const {rerender} = render(<Results analysis={fixture()}/>);
