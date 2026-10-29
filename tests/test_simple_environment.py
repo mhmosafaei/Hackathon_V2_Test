@@ -194,12 +194,11 @@ def test_api_fetch_is_explicit_isolated_and_restart_empty(tmp_path):
         r=requirement(); [r.pop(k) for k in ['source_verified','review_state','executable']]
         r['source_spans']=[{'page':1,'quotation':packet['pages'][0].text.strip()}]
         result['environmental_requirements']=[r]
-        result['environmental_extraction']={'candidate_conditions':['1']}
         return result
     def provider(request): providers.append(1); return mock_evidence(request)
     client=TestClient(create_app(tmp_path,transport=transport,environmental_transports={'COPERNICUS_MARINE':provider}))
     boot=client.get('/api/session').json()['boot_id']; headers={'x-session-id':boot,'x-filename':'test.pdf'}
-    doc=client.post('/api/analyze',content=pdf_bytes(),headers=headers).json()
+    doc=client.post('/api/analyze',content=pdf_bytes(include_environmental=True),headers=headers).json()
     assert calls==[1] and providers==[]
     approve_synthetic_point(client, doc, headers)
     options=inputs().model_dump(mode='json'); options['analysis_id']=doc['analysis_id']

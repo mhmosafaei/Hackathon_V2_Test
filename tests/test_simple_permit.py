@@ -15,12 +15,14 @@ from src.permit.simple_fixture import mock_request
 from src.documents.extractor import CandidateResponseError
 
 
-def pdf_bytes():
+def pdf_bytes(include_environmental=False):
     pdf = pymupdf.open()
     for page in range(6):
         text = 'Part 2 - Conditions\n' if page == 0 else ''
         if page == 0:
             text += 'Synthetic work point: WGS84 latitude 54.1 longitude -6.1.\n'
+            if include_environmental:
+                text += 'Significant wave height shall not exceed 2.5 m during works.\n'
         text += '\n'.join(f'{i}. The operator shall keep records. Within 24 hours notify the authority.' for i in range(page*4+1, min(page*4+5, 23)))
         if not text: text = 'Appendix A: synthetic map context and geographic evidence for test only.'
         pdf.new_page().insert_text((50, 60), text)
