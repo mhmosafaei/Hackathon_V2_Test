@@ -1,6 +1,9 @@
 """Loopback React host. No active analysis is restored or shared between sessions."""
 import argparse
 import os
+import base64
+import binascii
+import secrets
 import asyncio
 import logging
 import json
@@ -53,6 +56,32 @@ class DecisionInput(BaseModel):
 
 def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports=None, coordinate_transport=None):
     app = FastAPI(docs_url=None, redoc_url=None)
+    # Private demo only: one shared operator identity, not multi-tenant access.
+    @app.middleware('http')
+    async def demo_access(request: Request, call_next):
+        if request.url.path == '/api/health':
+            return await call_next(request)
+        if os.environ.get('PERMITPULSE_PRIVATE_DEMO') != '1':
+            return await call_next(request)
+        username = os.environ.get('PERMITPULSE_DEMO_USERNAME', '')
+        password = os.environ.get('PERMITPULSE_DEMO_PASSWORD', '')
+        if not username or not password:
+            return JSONResponse({'error': 'DEMO_ACCESS_NOT_CONFIGURED'}, status_code=503)
+        auth = request.headers.get('authorization', '')
+        authorized = False
+        if auth.startswith('Basic '):
+            try:
+                raw = base64.b64decode(auth[6:], validate=True).decode('utf-8')
+                supplied_user, supplied_password = raw.split(':', 1)
+                authorized = (secrets.compare_digest(supplied_user, username)
+                              and secrets.compare_digest(supplied_password, password))
+            except (ValueError, UnicodeError, binascii.Error):
+                pass
+        if not authorized:
+            return JSONResponse({'error': 'AUTHENTICATION_REQUIRED'}, status_code=401,
+                headers={'WWW-Authenticate': 'Basic realm="PermitPulse private demo"',
+                         'Cache-Control': 'no-store'})
+        return await call_next(request)
     @app.get('/api/health')
     async def health():
         return {'status': 'ok'}
