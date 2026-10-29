@@ -105,10 +105,11 @@ def test_partial_marine_override_keeps_weather_transport(tmp_path, monkeypatch):
     def fake_evaluate(a,i,p,*,transports):seen.append(transports);return {'requirements':[]}
     monkeypatch.setattr(module,'evaluate',fake_evaluate)
     app=create_app(tmp_path,environmental_transports={'COPERNICUS_MARINE':lambda r:None})
-    app.state.analyses['isolated-test']=analysis(requirement('wind_speed_10m'))
+    app.state.analyses['isolated-test']={**analysis(requirement('wind_speed_10m')), 'document_sha256':'a'*64}
     with TestClient(app) as client:
         boot=client.get('/api/session').json()['boot_id']
-        r=client.post('/api/environmental',json=inputs().model_dump(mode='json'),headers={'x-session-id':boot})
+        options=inputs().model_dump(mode='json'); options['latitude']=options['longitude']=None
+        r=client.post('/api/environmental',json=options,headers={'x-session-id':boot})
     assert r.status_code==200 and 'ECMWF_FORECAST' in seen[0]
 
 

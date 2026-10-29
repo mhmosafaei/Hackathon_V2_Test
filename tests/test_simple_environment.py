@@ -182,6 +182,7 @@ def test_api_fetch_is_explicit_isolated_and_restart_empty(tmp_path):
     doc=client.post('/api/analyze',content=pdf_bytes(),headers=headers).json()
     assert calls==[1] and providers==[]
     options=inputs().model_dump(mode='json'); options['analysis_id']=doc['analysis_id']
+    options['latitude']=options['longitude']=None
     result=client.post('/api/environmental',json=options,headers=headers)
     assert result.status_code==200 and providers==[1] and calls==[1]
     assert result.json()['executable_rules']==0

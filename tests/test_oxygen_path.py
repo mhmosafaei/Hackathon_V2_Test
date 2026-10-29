@@ -55,6 +55,7 @@ def test_oxygen_daily_3d_extraction_persistence_provider_api(tmp_path,monkeypatc
         stored=json.loads(next(tmp_path.rglob('analysis.json')).read_text(encoding='utf-8'))
         assert stored['environmental_requirements']==doc['environmental_requirements']
         period=inputs().model_dump(mode='json');period['analysis_id']=doc['analysis_id']
+        period['latitude']=period['longitude']=None
         period['start_time']=datetime.now(timezone.utc).replace(hour=12,minute=0,second=0,microsecond=0).isoformat()
         period['end_time']=(datetime.fromisoformat(period['start_time'])+timedelta(hours=24)).isoformat()
         result=client.post('/api/environmental',json=period,headers=headers)

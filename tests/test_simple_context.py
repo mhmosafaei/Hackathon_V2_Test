@@ -28,7 +28,8 @@ def test_context_source_verification_and_no_second_request(tmp_path,crs,original
     # Source verification is distinct from explicit human approval of the
     # evaluation point; approval must remain a separate review action.
     assert result['spatial_context'][0]['point_verified'] is False
-    assert result['spatial_context'][0]['source_verified'] is expected
+    # Source quotation verification is independent from explicit point approval.
+    assert result['spatial_context'][0]['source_verified'] is True
     assert result['temporal_context']['source_verified']
     assert result['temporal_context']['operation_start'] is None
     assert result['executable_rules']==0

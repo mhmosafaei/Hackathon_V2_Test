@@ -198,6 +198,9 @@ def test_explicit_depth_survives_single_extraction_persistence_and_api(tmp_path)
         stored=json.loads(next(tmp_path.rglob('analysis.json')).read_text())
         assert stored['environmental_requirements'][0]['depth_requirement']=='1 metre below sea surface'
         options=inputs().model_dump(mode='json');options['analysis_id']=doc['analysis_id']
+        # This test exercises depth persistence/provider routing; omit the
+        # optional evaluation point so it does not bypass the spatial-review gate.
+        options['latitude']=options['longitude']=None
         evidence=client.post('/api/environmental',json=options,headers=headers)
         assert evidence.status_code==200 and provider_calls[0].depth==1
         assert len(extraction_calls)==1 and evidence.json()['executable_rules']==0
