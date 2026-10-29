@@ -43,7 +43,7 @@ def test_oxygen_daily_3d_extraction_persistence_provider_api(tmp_path,monkeypatc
     with pymupdf.open() as pdf:
         pdf.new_page().insert_textbox(pymupdf.Rect(40,40,550,750),
             'Synthetic work point: WGS84 latitude 54.1 longitude -6.1.\n'
-            '1. Significant wave height shall not exceed 2.5 m during works.\n'
+            '1. Significant wave height greater than 1.5 m shall be flagged for review.\n'
             '1. '+r['requirement_text'])
         data=pdf.tobytes()
     with TestClient(create_app(tmp_path,transport=extraction,
