@@ -64,7 +64,9 @@ def test_oxygen_daily_3d_extraction_persistence_provider_api(tmp_path,monkeypatc
         period['end_time']=(datetime.fromisoformat(period['start_time'])+timedelta(hours=24)).isoformat()
         result=client.post('/api/environmental',json=period,headers=headers)
         assert result.status_code==200
-        body=result.json();row=body['requirements'][0];e=row['evidence']
+        body=result.json();row=body['requirements'][0]
+        assert 'evidence' in row, body
+        e=row['evidence']
         assert len(extraction_calls)==len(calls)==1
         assert row['routing']['preferred_provider']=='COPERNICUS_MARINE'
         assert calls[0]['dataset_id']=='cmems_mod_nws_bgc-o2_anfc_7km-3D_P1D-m'
