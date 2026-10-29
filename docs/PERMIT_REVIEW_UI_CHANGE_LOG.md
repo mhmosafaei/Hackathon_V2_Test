@@ -118,3 +118,14 @@ Branch: `qinren/permit-review-ui`. Local changes awaiting visual review.
 - Updated the frontend tests to reflect the current four-step workflow and focused review layout.
 
 Verification: Frontend build and full test suite passed. Changes remain uncommitted for manual visual review.
+
+## 2026-10-29 — Spatial approval unblocks Environmental Intelligence
+
+Branch: `qinren/permit-review-ui`.
+
+- Fixed the location review case where the interpretation was Approved but Applicability remained Unassessed, leaving Step 3 locked.
+- Approving a spatial point now also marks that point Applicable for the current assessment; other review items still require their own applicability decision.
+- The Human Review guide now identifies whether interpretation approval or applicability is still missing, so the green applicability ring is not mistaken for review completion.
+- Updated the current local test run's already approved spatial item to Applicable; its review progress is now 34 of 34 complete.
+
+Verification: Spatial review tests (9/9) and focused frontend tests (21/21) passed.

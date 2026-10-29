@@ -78,6 +78,16 @@ function AppNav({tab, setTab, access, completed}) {
       <Icon size={17}/><span>{label}</span><small className="workflow-nav-state" aria-hidden="true">{completed[id] ? 'Done' : !access[id] ? 'Locked' : tab === id ? 'Current' : 'Ready'}</small>
     </button>)}</nav>;
 }
+function reviewBlockerHint(rows, remaining) {
+  if (!Array.isArray(rows) || !rows.length) return `${remaining} review item(s) remain.`;
+  const interpretations = rows.filter(row => !['APPROVED', 'CORRECTED'].includes(row.state)).length;
+  const applicability = rows.filter(row => !['APPLICABLE', 'NOT_APPLICABLE'].includes(row.applicability)).length;
+  const details = [
+    interpretations && `${interpretations} ${interpretations === 1 ? 'interpretation needs' : 'interpretations need'} approval or correction`,
+    applicability && `${applicability} ${applicability === 1 ? 'item needs' : 'items need'} applicability`,
+  ].filter(Boolean);
+  return details.length ? `${details.join(' · ')}. Applicable alone does not complete review.` : `${remaining} review item(s) remain; check conflicts and required notes.`;
+}
 function ReviewDashboard({progress, rows}) {
   const total = progress?.total || 0;
   const resolved = progress?.resolved || 0;
@@ -95,7 +105,7 @@ function ReviewDashboard({progress, rows}) {
   const notApplicableEnd = angles[0] + angles[1];
   return <div className="workflow-review-dashboard" aria-label="Human Review dashboard">
     <div className="workflow-review-gauge" role="img" aria-label={`Condition applicability: ${summary?.applicable ?? 0} applicable, ${summary?.notApplicable ?? 0} not applicable, ${summary?.unassessed ?? 0} unassessed. Zero-count categories appear as small markers.`} style={{'--applicable-end':`${applicableEnd}deg`,'--not-applicable-end':`${notApplicableEnd}deg`}}><span>{applicabilityTotal}<small>conditions</small></span></div>
-    <div className="workflow-review-stats"><strong>{resolved} / {total} review items · {percentage}%</strong><span>{progress?.remaining ?? Math.max(0,total-resolved)} remaining{locationItems ? ` · ${locationItems} location ${locationItems === 1 ? 'item' : 'items'} reviewed separately` : ''}</span><div className="workflow-applicability"><span><i className="workflow-applicable-dot"/>Applicable <b>{summary?.applicable ?? '—'}</b></span><span><i className="workflow-not-applicable-dot"/>Not applicable <b>{summary?.notApplicable ?? '—'}</b></span><span><i className="workflow-unassessed-dot"/>Unassessed <b>{summary?.unassessed ?? '—'}</b></span></div></div>
+    <div className="workflow-review-stats"><strong>{resolved} / {total} review items · {percentage}%</strong><span>{progress?.remaining ?? Math.max(0,total-resolved)} remaining{locationItems ? ` · ${locationItems} location ${locationItems === 1 ? 'item' : 'items'} reviewed separately` : ''}</span><div className="workflow-applicability"><span><i className="workflow-applicable-dot"/>Applicable <b>{summary?.applicable ?? '—'}</b></span><span><i className="workflow-not-applicable-dot"/>Not applicable <b>{summary?.notApplicable ?? '—'}</b></span><span><i className="workflow-unassessed-dot"/>Unassessed <b>{summary?.unassessed ?? '—'}</b></span></div>{progress?.remaining > 0 && rows?.length > 0 && <small className="workflow-review-blockers">{reviewBlockerHint(rows, progress.remaining)}</small>}</div>
   </div>;
 }
 function WorkflowGuide({tab, access, reviewProgress, reviewRows, environmentHandled, onStep, onContinueWithoutEvidence, compact=false}) {
@@ -103,7 +113,7 @@ function WorkflowGuide({tab, access, reviewProgress, reviewRows, environmentHand
   const previous = workflowSteps[index - 1], next = workflowSteps[index + 1];
   const [title, description, task] = workflowCopy[tab];
   const nextReason = tab === 'permit' ? 'Analyze a permit to continue.' : tab === 'review'
-    ? reviewProgress ? `${reviewProgress.remaining} review item(s) remain.` : 'Loading review status…' : 'Fetch evidence or acknowledge the gap to continue.';
+    ? reviewProgress ? reviewBlockerHint(reviewRows, reviewProgress.remaining) : 'Loading review status…' : 'Fetch evidence or acknowledge the gap to continue.';
   return <section className={`workflow-guide ${compact ? 'workflow-guide-compact' : ''} ${tab === 'review' && !compact ? 'workflow-guide-review' : ''}`} aria-label={`Step ${index + 1} ${compact ? 'navigation' : 'guidance'}`}>
     <div className="workflow-guide-intro"><span className="workflow-guide-label">STEP {index + 1} OF 4</span>
       {!compact && <><h2>{title}</h2>{description && <p>{description}</p>}<p className="workflow-guide-task">{tab !== 'review' && <strong>What to do:</strong>} {task}</p>

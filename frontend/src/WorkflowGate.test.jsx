@@ -11,6 +11,10 @@ vi.mock('recharts', async () => {
 vi.mock('./Environmental.jsx', () => ({default: () => <div>Environmental view</div>}));
 vi.mock('./HumanReview.jsx', async importOriginal => ({...(await importOriginal()), default: ({onUpdated,onLoaded}) => <div>
   <button onClick={() => onLoaded({analysis_run_id:'run-1',requirements:[{state:'APPROVED',applicability:'APPLICABLE',conflict:null,review:{note:''},source:{source_verified:true},kind:'condition'}]})}>Report loaded review</button>
+  <button onClick={() => onLoaded({analysis_run_id:'run-1',review_progress:{total:2,resolved:0,remaining:2,complete:false},requirements:[
+    {state:'UNREVIEWED',applicability:'APPLICABLE',conflict:null,source:{source_verified:true},kind:'condition'},
+    {state:'UNREVIEWED',applicability:'UNASSESSED',conflict:null,source:{source_verified:true},kind:'spatial_context'}
+  ]})}>Report applicability-only review</button>
   <button onClick={() => onUpdated({analysis_run_id:'run-1', review_progress:{total:1,resolved:1,remaining:0,complete:true},requirements:[]})}>Complete review</button>
   <button onClick={() => onUpdated({analysis_run_id:'run-1', review_progress:{total:1,resolved:0,remaining:1,complete:false},requirements:[]})}>Change review to pending</button>
 </div>}));
@@ -69,6 +73,21 @@ it('unlocks after review, keeps review editable, and marks later changes stale',
   expect(screen.getByText('Assessment out of date')).toBeVisible();
   await user.click(screen.getByRole('button',{name:'Reevaluate'}));
   await waitFor(()=>expect(screen.queryByText('Assessment out of date')).not.toBeInTheDocument());
+});
+
+it('explains that applicable items still need interpretation review before Step 3', async () => {
+  vi.stubGlobal('fetch', vi.fn(async url => ({ok:true,json:async () => url==='/api/session'
+    ? {boot_id:'boot-1'} : url.startsWith('/api/reviews?')
+      ? {analysis_run_id:'run-1',review_progress:{total:2,resolved:0,remaining:2,complete:false},requirements:[]}
+      : analysis})));
+  const user=userEvent.setup();render(<App/>);
+  await user.upload(screen.getByLabelText('Upload permit PDF'),new File(['%PDF-test'],'test.pdf',{type:'application/pdf'}));
+  await user.click(screen.getByRole('button',{name:'Analyze',exact:true}));
+  await screen.findByText('P-1');
+  await user.click(within(screen.getByRole('navigation',{name:'Primary navigation'})).getByRole('button',{name:'Human Review'}));
+  await user.click(screen.getByRole('button',{name:'Report applicability-only review'}));
+  expect(screen.getAllByText(/2 interpretations need approval or correction · 1 item needs applicability/).length).toBeGreaterThan(0);
+  expect(screen.getAllByRole('button',{name:'Next: Environmental Intelligence'}).every(button => button.disabled)).toBe(true);
 });
 
 

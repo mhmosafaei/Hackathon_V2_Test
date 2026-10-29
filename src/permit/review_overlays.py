@@ -260,6 +260,8 @@ def save_review(root, analysis, target_id, data):
         kind, _, raw = target
         if data.get('original_fingerprint') != fingerprint(raw):
             raise ValueError('REVIEW_FINGERPRINT_CONFLICT')
+        if kind == 'spatial_context' and data.get('state') == 'APPROVED' and data.get('applicability') == 'UNASSESSED':
+            data = {**data, 'applicability': 'APPLICABLE'}
         validate_review(data, kind, raw)
         store = read_store(path)
         # Validate existing overlays before replacing anything.
