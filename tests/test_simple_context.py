@@ -24,7 +24,11 @@ def test_context_source_verification_and_no_second_request(tmp_path,crs,original
         result['temporal_context'].update(permit_valid_from='29 March 2024',permit_valid_until='28 March 2027',source_spans=span)
         return result
     result=analyze(data,'synthetic-context.pdf',tmp_path,transport=transport)
-    assert calls==[1] and result['spatial_context'][0]['point_verified']==expected
+    assert calls==[1]
+    # Source verification is distinct from explicit human approval of the
+    # evaluation point; approval must remain a separate review action.
+    assert result['spatial_context'][0]['point_verified'] is False
+    assert result['spatial_context'][0]['source_verified'] is expected
     assert result['temporal_context']['source_verified']
     assert result['temporal_context']['operation_start'] is None
     assert result['executable_rules']==0
@@ -83,7 +87,8 @@ def test_narrow_water_spatial_survives_strict_response_persistence_and_api(tmp_p
     # The API adds active-session metadata after the immutable analysis artifact
     # is written; compare the persisted payload after removing those fields.
     persisted_view = {k: v for k, v in body.items() if k not in {'document_sha256', 'restored_from_persistence'}}
-    assert persisted_view == saved == app.state.analyses[body['analysis_id']]
+    assert persisted_view == saved
+    assert body == app.state.analyses[body['analysis_id']]
     context = body['spatial_context'][0]
     assert context['coordinates_original'] == 'IGR 312890E 319096N'
     assert context['northing'] == 319096 and context['source_page'] == 1
