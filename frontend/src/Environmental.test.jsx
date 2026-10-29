@@ -1,5 +1,5 @@
 import React from 'react';
-import {render, screen, waitFor, act, fireEvent} from '@testing-library/react';
+import {render, screen, waitFor, act, fireEvent, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, it, expect, vi, afterEach} from 'vitest';
 import Environmental, {blockerLabel, displayedPointLabel} from './Environmental.jsx';
@@ -78,6 +78,51 @@ it('displays informational wave convention and derived current direction without
   expect(screen.getByTestId('current-direction-details')).toHaveTextContent('0 degrees');
   expect(screen.getByTestId('current-direction-details')).toHaveTextContent('TOWARDS_CLOCKWISE_FROM_NORTH');
   expect(screen.getByTestId('threshold-check')).toHaveTextContent('Displayed point: INFORMATIONAL');
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it('formats displayed environmental measurements while preserving thresholds and coordinates',()=>{
+  const oxygen={...row,condition_id:'21',canonical_variable:'dissolved_oxygen',threshold:9.87654321,unit:'mg/L',status:'WITHIN_THRESHOLD',
+    evidence:{canonical_variable:'dissolved_oxygen',data_type:'MODEL_FORECAST',latitude:54.123456,longitude:-6.654321,
+      requested_coordinates:[54.123456,-6.654321],requested_depth_m:7.77777,selected_depth_m:5.55555,depth_difference_m:0.12349,
+      depth_tolerance_m:0.54321,distance_km:12.34567,max_representative_distance_km:20.12345,
+      recency_policy:{age_hours:3.33333,max_age_hours:6.66666},
+      points:[{data_time:'2026-10-14T00:00:00Z',raw_value:1.23456,unit:'mg/L',normalized_value:0.30000000000000004,
+        normalized_unit:'mg/L',status:'WITHIN_THRESHOLD',comparison:false}]}};
+  const current={...row,condition_id:'22',canonical_variable:'surface_current_direction',operator:null,threshold:null,
+    status:'INFORMATIONAL',unit:'degrees',
+    evidence:{canonical_variable:'surface_current_direction',data_type:'MODEL_FORECAST',
+      points:[{data_time:'2026-10-14T00:00:00Z',raw_value:0.123456,unit:'degrees',status:'INFORMATIONAL',
+        component_values:{uo:0.123456,vo:-0.987654}}],direction_convention:'TOWARDS_CLOCKWISE_FROM_NORTH'}};
+  current.checks=[{condition_id:'22',status:'INFORMATIONAL',threshold:null,evidence:current.evidence}];
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  render(<Environmental analysis={doc()} session={{...session,environmental_result:{
+    analysis_id:'fresh',requirements:[oxygen,current],evidence_groups:[oxygen,current],provider_status:session.provider_status
+  }}}/>);
+
+  const cards=screen.getAllByTestId('evidence-card');
+  const oxygenCard=cards.find(card=>card.textContent.includes('dissolved oxygen'));
+  expect(oxygenCard).toBeTruthy();
+  expect(oxygenCard.textContent).toContain('1.235 mg/L');
+  expect(oxygenCard.textContent).toContain('12.346 km');
+  expect(oxygenCard.textContent).toContain('20.123 km');
+  expect(oxygenCard.textContent).toContain('5.556 m');
+  expect(oxygenCard.textContent).toContain('requested 7.778 m · difference 0.123 m');
+  expect(oxygenCard.textContent).toContain('tolerance 0.543 m');
+  expect(oxygenCard.textContent).toContain('age 3.333 hours · maximum 6.667 hours');
+  expect(oxygenCard.textContent).toContain('<= 9.87654321 mg/L');
+  expect(oxygenCard.textContent).toContain('54.123456, -6.654321');
+  expect(within(oxygenCard).getByTestId('retrieved-point').textContent).toContain('1.235 mg/L');
+  expect(within(oxygenCard).getByTestId('retrieved-point').textContent).toContain('Normalized: 0.3 mg/L');
+
+  const direction=screen.getByTestId('current-direction-details');
+  expect(direction.textContent).toContain('0.123 degrees');
+  expect(direction.textContent).toContain('U 0.123, V -0.988');
+
+  for(const unrounded of ['1.23456','0.30000000000000004','12.34567','20.12345','5.55555',
+    '7.77777','0.12349','0.54321','3.33333','6.66666','0.123456','-0.987654']) {
+    expect(document.body.textContent).not.toContain(unrounded);
+  }
   expect(fetch).not.toHaveBeenCalled();
 });
 
