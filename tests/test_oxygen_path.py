@@ -39,6 +39,11 @@ def test_oxygen_daily_3d_extraction_persistence_provider_api(tmp_path,monkeypatc
         extraction_calls.append(1)
         payload=mock_request(packet);payload['conditions']=payload['conditions'][:1]
         payload['environmental_requirements']=[extracted]
+        payload['environmental_extraction']={
+            'candidate_count':1,'returned_record_count':1,'extracted_count':1,
+            'missing_count':0,'candidate_conditions':['1'],'extracted_conditions':['1'],
+            'missing_conditions':[],'incomplete_records':[],'complete':True,
+        }
         return payload
     with pymupdf.open() as pdf:
         pdf.new_page().insert_textbox(pymupdf.Rect(40,40,550,750),

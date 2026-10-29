@@ -173,6 +173,11 @@ def test_schema_single_request_preserves_environment(tmp_path):
         r=requirement(); [r.pop(k) for k in ['source_verified','review_state','executable']]
         r['source_spans']=[{'page':1,'quotation':packet['pages'][0].text.strip()}]
         result['environmental_requirements']=[r]
+        result['environmental_extraction']={
+            'candidate_count':1,'returned_record_count':1,'extracted_count':1,
+            'missing_count':0,'candidate_conditions':['1'],'extracted_conditions':['1'],
+            'missing_conditions':[],'incomplete_records':[],'complete':True,
+        }
         return result
     result=analyze(pdf_bytes(),'test.pdf',tmp_path,transport=transport)
     assert calls==[1] and result['environmental_requirements'][0]['source_verified']
