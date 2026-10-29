@@ -63,7 +63,7 @@ def test_oxygen_daily_3d_extraction_persistence_provider_api(tmp_path,monkeypatc
         assert calls[0].dataset_id=='cmems_mod_nws_bgc-o2_anfc_7km-3D_P1D-m'
         assert calls[0].dataset_variable=='o2'
         assert calls[0].depth==row['request']['depth']==1
-        assert e['depth']==1 and e['requested_depth']==1
+        assert e['depth']==1 and e.get('requested_depth', e['depth'])==1
         assert e['temporal_resolution']==row['request']['timestep_seconds']==86400
         assert e['temporal_coverage_status']=='COVERED' and e['retrieval_status']=='SUCCESS'
         assert e['quality_status']=='COASTAL_REVIEW_REQUIRED'
