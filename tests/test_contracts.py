@@ -1,4 +1,5 @@
 from pathlib import Path
+import pytest
 from src.documents.pdf_parser import PdfPage
 from src.contracts.service import extract_weather_clauses, save_clauses, load_clauses, save_review, reviews, analyse_confirmed
 from src.models.contract_clause import ContractReviewState
