@@ -21,3 +21,9 @@ services:
         sync: false
       - key: PERMITPULSE_ALLOWED_ORIGIN
         sync: false
+      - key: PERMITPULSE_PRIVATE_DEMO
+        value: '1'
+      - key: PERMITPULSE_DEMO_USERNAME
+        sync: false
+      - key: PERMITPULSE_DEMO_PASSWORD
+        sync: false
