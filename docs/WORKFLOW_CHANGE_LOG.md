@@ -70,3 +70,9 @@ At least one review target must exist. Every target must be free of conflicts, h
 - Decision now receives the same `reviewComplete` result used by navigation. This lets an already completed review reach the work-window controls.
 - Extended the workflow regression test to cover entering Decision after a completed review response without `review_progress`.
 - Focused workflow tests passed (2/2), and the frontend build passed.
+
+## 2026-10-29 — Published after user review
+
+- Qinren confirmed the workflow ran successfully and requested submission to her branch.
+- Workflow changes were committed as `0bc03be` and pushed to `origin/qinren/update_workflow`.
+- The shared base branch was not changed. The existing local `frontend/package-lock.json` modification and `.env` were excluded from the commit.
