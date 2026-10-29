@@ -118,7 +118,7 @@ test('STOP naming agrees across current, selected window, timeline and interval 
   expect(within(screen.getByText('Selected window details').closest('section')).getByText(reason)).toBeTruthy();
   expect(JSON.stringify(value)).toBe(before);
 });
-test('Decision navigation follows Human Review',()=>{vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({boot_id:'boot'})}));render(<App/>);const buttons=within(screen.getByRole('navigation')).getAllByRole('button');expect(buttons.map(b=>b.textContent).slice(-2)).toEqual(['Human Review','Decision & Work Windows']);});
+test('Decision navigation follows Human Review',()=>{vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({boot_id:'boot'})}));render(<App/>);const navigation=screen.getByRole('navigation',{name:'Primary navigation'});const labels=within(navigation).getAllByRole('button').map(button=>button.querySelector('span')?.textContent);expect(labels.slice(-3)).toEqual(['Human Review','Environmental Intelligence','Decision & Work Windows']);});
 
 test('summary STOP rows and selected windows use distinct matching interval triggers',async()=>{
   const generic='One or more reviewed operational constraints are triggered.';

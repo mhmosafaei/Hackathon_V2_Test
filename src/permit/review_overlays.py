@@ -104,6 +104,20 @@ def read_store(path):
         raise ValueError('MALFORMED_REVIEW_STORE') from None
 
 
+def review_progress(rows):
+    """Human interpretation and applicability completion, separate from evidence quality."""
+    def resolved(row):
+        return (not row.get('conflict')
+                and row['state'] in {'APPROVED', 'CORRECTED'}
+                and row['applicability'] in {'APPLICABLE', 'NOT_APPLICABLE'}
+                and (row['applicability'] != 'NOT_APPLICABLE'
+                     or bool((row.get('review') or {}).get('note', '').strip())))
+    total = len(rows)
+    remaining = sum(not resolved(row) for row in rows)
+    return {'total': total, 'resolved': total - remaining,
+            'remaining': remaining, 'complete': total > 0 and remaining == 0}
+
+
 def list_reviews(root, analysis):
     original, path = context(root, analysis)
     store = read_store(path)
@@ -139,7 +153,7 @@ def list_reviews(root, analysis):
         if row['kind'] == 'spatial_context' and row['state'] == 'APPROVED' and row['applicability'] == 'APPLICABLE' and row['source'].get('source_verified') is True:
             decision_context['spatial_context'][targets(original)[row['target_id']][1]]['point_verified'] = True
     return {'analysis_run_id': analysis['analysis_id'], 'document_sha256': analysis['document_sha256'], 'requirements': rows,
-            'decision_context': decision_context}
+            'review_progress': review_progress(rows), 'decision_context': decision_context}
 
 
 def bulk_blocker(row):
@@ -246,6 +260,8 @@ def save_review(root, analysis, target_id, data):
         kind, _, raw = target
         if data.get('original_fingerprint') != fingerprint(raw):
             raise ValueError('REVIEW_FINGERPRINT_CONFLICT')
+        if kind == 'spatial_context' and data.get('state') == 'APPROVED' and data.get('applicability') == 'UNASSESSED':
+            data = {**data, 'applicability': 'APPLICABLE'}
         validate_review(data, kind, raw)
         store = read_store(path)
         # Validate existing overlays before replacing anything.

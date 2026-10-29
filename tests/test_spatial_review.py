@@ -67,6 +67,17 @@ def test_explicit_spatial_review_is_bound_to_analysis_and_enables_only_that_poin
     assert saved['document_sha256'] == value['document_sha256']
 
 
+def test_approving_spatial_point_also_marks_it_applicable(tmp_path):
+    value = analysis(tmp_path); verify(value)
+    row = next(item for item in list_reviews(tmp_path, value)['requirements'] if item['kind'] == 'spatial_context')
+    saved = save_review(tmp_path, value, row['target_id'], {
+        'original_fingerprint': row['original_fingerprint'], 'state': 'APPROVED', 'applicability': 'UNASSESSED',
+        'corrections': {}, 'reviewer': 'Reviewer', 'note': ''})
+    assert saved['review_progress']['complete'] is True
+    assert saved['requirements'][0]['applicability'] == 'APPLICABLE'
+    assert saved['decision_context']['spatial_context'][0]['point_verified'] is True
+
+
 def test_rejected_spatial_review_keeps_point_blocked(tmp_path):
     value = analysis(tmp_path); verify(value)
     row = next(item for item in list_reviews(tmp_path, value)['requirements'] if item['kind'] == 'spatial_context')
