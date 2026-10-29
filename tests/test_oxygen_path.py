@@ -12,7 +12,7 @@ from src.environmental.service import evaluate, map_requirements
 from src.permit.simple_api import create_app
 from src.permit.simple_fixture import mock_request
 from tests.test_environmental_sampling import fixture_requirement
-from tests.test_simple_environment import analysis, inputs
+from tests.test_simple_environment import analysis, inputs, approve_synthetic_point
 
 
 def oxygen():
@@ -41,7 +41,8 @@ def test_oxygen_daily_3d_extraction_persistence_provider_api(tmp_path,monkeypatc
         payload['environmental_requirements']=[extracted]
         return payload
     with pymupdf.open() as pdf:
-        pdf.new_page().insert_textbox(pymupdf.Rect(40,40,550,750),'1. '+r['requirement_text'])
+        pdf.new_page().insert_textbox(pymupdf.Rect(40,40,550,750),
+            'Synthetic work point: WGS84 latitude 54.1 longitude -6.1.\n1. '+r['requirement_text'])
         data=pdf.tobytes()
     with TestClient(create_app(tmp_path,transport=extraction,
                             environmental_transports={'COPERNICUS_MARINE':worker})) as client:
@@ -55,7 +56,8 @@ def test_oxygen_daily_3d_extraction_persistence_provider_api(tmp_path,monkeypatc
         stored=json.loads(next(tmp_path.rglob('analysis.json')).read_text(encoding='utf-8'))
         assert stored['environmental_requirements']==doc['environmental_requirements']
         period=inputs().model_dump(mode='json');period['analysis_id']=doc['analysis_id']
-        period['latitude']=period['longitude']=None
+        approve_synthetic_point(client, doc, headers)
+        period['latitude'],period['longitude']=54.1,-6.1
         period['start_time']=datetime.now(timezone.utc).replace(hour=12,minute=0,second=0,microsecond=0).isoformat()
         period['end_time']=(datetime.fromisoformat(period['start_time'])+timedelta(hours=24)).isoformat()
         result=client.post('/api/environmental',json=period,headers=headers)
