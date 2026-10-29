@@ -2,19 +2,15 @@ services:
   - type: web
     name: permitpulse-api
     runtime: python
-    plan: starter
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: bash scripts/start_render.sh
     healthCheckPath: /api/health
-    disk:
-      name: permitpulse-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.11
       - key: PERMITPULSE_DATA_DIR
-        value: /var/data
+        value: /tmp/permitpulse-data
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
