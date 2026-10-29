@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://REPLACE_WITH_RENDER_HOST.onrender.com/api/:path*" }
+    { "source": "/api/:path*", "destination": "https://permitpulse-api-q9jt.onrender.com/api/:path*" }
   ]
 }
