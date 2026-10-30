@@ -14,6 +14,7 @@ from .errors import ProviderError, diagnostic
 from .sampling import MARINE_STEPS, timestep_bounds, source_depth, weather_spatial_limit, depth_metadata
 
 CURRENT_VARIABLES = {'eastward_current', 'northward_current', 'surface_current_speed', 'surface_current_direction'}
+WAVE_VARIABLES = {'significant_wave_height', 'mean_wave_period', 'mean_wave_direction'}
 
 
 def source_numeric_values(text):
@@ -488,6 +489,11 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
             # One uo/vo request is sufficient for all four current projections.
             retrieval_inputs['canonical_variable'] = 'current_vector_bundle'
             retrieval_inputs['dataset_variable'] = 'uo,vo'
+        if provider == 'COPERNICUS_MARINE' and routing['canonical_variable'] in WAVE_VARIABLES:
+            # VHM0/VTM02/VMDR share one dataset and one bounded subset.  Fetch
+            # the bundle once, then project each reviewed requirement locally.
+            retrieval_inputs['canonical_variable'] = 'wave_bundle'
+            retrieval_inputs['dataset_variable'] = 'VHM0,VTM02,VMDR'
         if provider in {'ECMWF_FORECAST', 'ERA5'}:
             retrieval_inputs['cell_selection'] = 'nearest'
         identity = sha256(json.dumps({'version': 2, 'analysis_id': analysis['analysis_id'],
@@ -523,6 +529,8 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
                 path.write_text(json.dumps({'retrieval':retrieval_inputs, 'request': request_data, 'evidence': evidence}, allow_nan=False, indent=2))
                 row['cache_state'] = 'FETCHED'
             if provider == 'COPERNICUS_MARINE' and routing['canonical_variable'] in CURRENT_VARIABLES:
+                evidence = copernicus.project_current_or_wave_evidence(evidence, routing['canonical_variable'], variable)
+            if provider == 'COPERNICUS_MARINE' and routing['canonical_variable'] in WAVE_VARIABLES:
                 evidence = copernicus.project_current_or_wave_evidence(evidence, routing['canonical_variable'], variable)
             if not depth_sensitive:
                 evidence = {**evidence, 'depth':None,'requested_depth':None,'requested_depth_m':None,

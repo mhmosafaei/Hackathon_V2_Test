@@ -17,9 +17,12 @@ from tests.test_decision_engine import fixture, run, T
 
 
 def waves():
-    ds=xr.Dataset({'VMDR':(('time','latitude','longitude'),np.array([[[241.]],[[242.]]]))},
+    ds=xr.Dataset({'VHM0':(('time','latitude','longitude'),np.array([[[1.2]],[[1.3]]])),
+                   'VTM02':(('time','latitude','longitude'),np.array([[[4.]],[[4.1]]])),
+                   'VMDR':(('time','latitude','longitude'),np.array([[[241.]],[[242.]]]))},
         coords={'time':np.array(['2026-10-14T00:00','2026-10-14T01:00'],dtype='datetime64[m]'),
                 'latitude':[54.],'longitude':[-6.]})
+    ds.VHM0.attrs['units']='m'; ds.VTM02.attrs['units']='s'
     ds.VMDR.attrs.update(units='degree',long_name='Mean wave direction from',standard_name='sea_surface_wave_from_direction')
     return ds
 
@@ -38,7 +41,7 @@ def test_wave_direction_native_value_and_provider_convention_unchanged(monkeypat
     ds=waves(); calls=mock_client(monkeypatch,ds)
     out=copernicus.worker(request('mean_wave_direction',requested_unit='degrees'))
     assert MARINE['mean_wave_direction']==('waves','VMDR')
-    assert calls[0]['variables']==['VMDR']
+    assert calls[0]['variables']==['VHM0','VTM02','VMDR']
     assert out['points'][0]['raw_value']==241 and out['points'][0]['unit']=='degree'
     assert out['points'][0]['data_time']=='2026-10-14T00:00:00+00:00'
     assert out['direction_metadata']==ds.VMDR.attrs
@@ -97,7 +100,7 @@ def test_aliases_are_informational_and_current_direction_reuses_one_uv_bundle(tm
     class Client:
         def open_dataset(self,**kwargs):
             calls.append(kwargs)
-            return (waves() if kwargs['variables']==['VMDR'] else vector_dataset()).copy(deep=True)
+            return (waves() if kwargs['variables']==['VHM0','VTM02','VMDR'] else vector_dataset()).copy(deep=True)
     monkeypatch.setattr(copernicus,'_load_worker_dependencies',lambda:(np,Client()))
     raw=[requirement(alias,condition_id=str(i),threshold=None,operator=None,unit='degrees',depth_requirement=None,
         source_spans=[{'page':1,'quotation':'Direction in degrees is informational only.'}]) for i,alias in enumerate([

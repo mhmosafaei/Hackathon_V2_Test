@@ -83,13 +83,31 @@ def retrieve(request):
         completed = subprocess.run([sys.executable, '-m', 'src.environmental.copernicus'],
             input=request.model_dump_json(), text=True, capture_output=True, cwd=ROOT, timeout=WORKER_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
-        raise ProviderError('TIMEOUT', 'Copernicus worker exceeded the bounded 60-second retrieval timeout; no complete evidence bundle returned. Worker phase is unknown; no automatic retry.') from None
+        raise ProviderError('TIMEOUT', 'Copernicus worker exceeded the bounded 60-second retrieval timeout; no complete evidence bundle returned. Worker phase is unknown; no automatic retry.', {
+            'failure_stage': 'UNKNOWN_WORKER_PHASE',
+            'dataset_id': request.dataset_id,
+            'dataset_variable': request.dataset_variable,
+            'timeout_seconds': WORKER_TIMEOUT_SECONDS,
+        }) from None
     # Toolbox output may include sensitive server diagnostics. Never forward stdout/stderr.
     marker = 'PERMITPULSE_RESULT='
     lines = [line[len(marker):] for line in completed.stdout.splitlines() if line.startswith(marker)]
     if completed.returncode or not lines:
-        raise ProviderError('WORKER_RUNTIME', 'Copernicus worker exited without a usable structured response.')
-    result = json.loads(lines[-1])
+        raise ProviderError('WORKER_RUNTIME', 'Copernicus worker exited without a usable structured response.', {
+            'failure_stage': 'WORKER_STARTUP_OR_EXIT',
+            'worker_exit_code': completed.returncode,
+            'dataset_id': request.dataset_id,
+            'dataset_variable': request.dataset_variable,
+        })
+    try:
+        result = json.loads(lines[-1])
+    except (TypeError, ValueError):
+        raise ProviderError('WORKER_PROTOCOL', 'Copernicus worker returned an invalid structured response.', {
+            'failure_stage': 'WORKER_RESPONSE_PARSE',
+            'worker_exit_code': completed.returncode,
+            'dataset_id': request.dataset_id,
+            'dataset_variable': request.dataset_variable,
+        }) from None
     if 'error_type' in result:
         raise ProviderError(result.get('error_category','PROVIDER_RUNTIME'),
             result.get('error_message','Copernicus retrieval failed; no usable evidence returned.'), result.get('error_metadata'))
@@ -117,12 +135,20 @@ def worker(request):
     lat, lon = request.coordinates
     # The vector current product supplies uo/vo together. Other products retain
     # their established one-variable request contract.
-    variables = ['uo', 'vo'] if group == 'currents' else [variable]
+    variables = (['uo', 'vo'] if group == 'currents' else
+                 ['VHM0', 'VTM02', 'VMDR'] if group == 'waves' else [variable])
     kwargs = dict(dataset_id=product['dataset'], variables=variables,
         minimum_latitude=lat-.05, maximum_latitude=lat+.05,
         minimum_longitude=lon-.05, maximum_longitude=lon+.05,
         start_datetime=request.provider_query_start or request.start_time,
         end_datetime=request.provider_query_end or request.end_time, chunk_size_limit=2_000_000)
+    # Pass deployment credentials explicitly to the isolated SDK call.  The
+    # Toolbox also discovers these names implicitly, but explicit propagation
+    # avoids losing the Render worker environment across the process boundary.
+    if user:
+        kwargs['username'] = user
+    if password:
+        kwargs['password'] = password
     if request.depth is not None:
         kwargs.update(minimum_depth=request.depth, maximum_depth=request.depth)
     if group == 'oxygen':
@@ -312,6 +338,13 @@ def project_current_or_wave_evidence(evidence, canonical_variable, dataset_varia
     result = copy.deepcopy(evidence)
     result['canonical_variable'] = canonical_variable
     result['dataset_variable'] = dataset_variable
+    if canonical_variable in {'significant_wave_height', 'mean_wave_period', 'mean_wave_direction'}:
+        for point in result.get('points', []):
+            source_values = point.get('source_values') or {}
+            if dataset_variable in source_values:
+                point['raw_value'] = source_values[dataset_variable]
+                point['unit'] = {'VHM0': 'm', 'VTM02': 's', 'VMDR': 'degrees'}.get(dataset_variable, point.get('unit'))
+        return result
     if canonical_variable in {'eastward_current', 'northward_current', 'surface_current_speed', 'surface_current_direction'}:
         result['direction_convention'] = 'TOWARDS_CLOCKWISE_FROM_NORTH' if canonical_variable == 'surface_current_direction' else None
     for point in result.get('points', []):

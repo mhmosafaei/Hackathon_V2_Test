@@ -30,6 +30,16 @@ def vector_dataset():
     return ds
 
 
+def wave_dataset():
+    times=np.array(['2026-10-14T00:00','2026-10-14T01:00'],dtype='datetime64[m]')
+    ds=xr.Dataset({'VHM0':(('time','latitude','longitude'),np.full((2,1,1),1.2)),
+                   'VTM02':(('time','latitude','longitude'),np.full((2,1,1),4.5)),
+                   'VMDR':(('time','latitude','longitude'),np.full((2,1,1),180.))},
+        coords={'time':times,'latitude':[54.],'longitude':[-6.]})
+    ds.VHM0.attrs['units']='m'; ds.VTM02.attrs['units']='s'; ds.VMDR.attrs['units']='degrees'
+    return ds
+
+
 def oxygen_dataset(depths=(1.,), unit='mmol m-3'):
     ds=xr.Dataset({'o2':(('time','depth','latitude','longitude'),np.full((1,len(depths),1,1),200.))},
         coords={'time':np.array(['2026-10-14'],dtype='datetime64[D]'),'depth':list(depths),'latitude':[54.],'longitude':[-6.]})
@@ -64,6 +74,25 @@ def test_vector_load_is_batched_point_series_and_native_grid(monkeypatch):
     assert evidence['points'][0]['component_values']=={'uo':-.8,'vo':.6}
     assert evidence['points'][0]['component_units']=={'uo':'m s-1','vo':'m s-1'}
     assert evidence['latitude']==54 and evidence['longitude']==-6 and evidence['distance_km']==0
+
+
+def test_worker_propagates_configured_credentials_without_persisting_them(monkeypatch):
+    monkeypatch.setenv('COPERNICUSMARINE_SERVICE_USERNAME', 'offline-user')
+    monkeypatch.setenv('COPERNICUSMARINE_SERVICE_PASSWORD', 'offline-password')
+    calls = mock_client(monkeypatch, vector_dataset())
+    copernicus.worker(request())
+    assert calls[0]['username'] == 'offline-user'
+    assert calls[0]['password'] == 'offline-password'
+
+
+def test_wave_worker_fetches_shared_bundle_and_projects_requested_variable(monkeypatch):
+    calls = mock_client(monkeypatch, wave_dataset())
+    evidence = copernicus.worker(request('mean_wave_period'))
+    assert calls[0]['variables'] == ['VHM0', 'VTM02', 'VMDR']
+    assert evidence['points'][0]['source_values']['VTM02'] == 4.5
+    projected = copernicus.project_current_or_wave_evidence(evidence, 'mean_wave_period', 'VTM02')
+    assert projected['points'][0]['raw_value'] == 4.5
+    assert projected['points'][0]['unit'] == 's'
 
 
 def test_four_current_requirements_share_one_transport(tmp_path):
@@ -112,6 +141,22 @@ def test_timeout_is_bounded_and_no_retry(monkeypatch):
     with pytest.raises(ProviderError) as caught:copernicus.retrieve(request())
     assert caught.value.category=='TIMEOUT' and 'phase is unknown' in caught.value.safe_message
     assert len(calls)==1 and calls[0]['timeout']==60
+
+
+def test_worker_exit_diagnostic_is_sanitized_and_structured(monkeypatch):
+    class Completed:
+        returncode = 1
+        stdout = ''
+    monkeypatch.setattr(copernicus.subprocess, 'run', lambda *args, **kwargs: Completed())
+    with pytest.raises(ProviderError) as caught:
+        copernicus.retrieve(request())
+    assert caught.value.category == 'WORKER_RUNTIME'
+    assert caught.value.metadata == {
+        'failure_stage': 'WORKER_STARTUP_OR_EXIT',
+        'worker_exit_code': 1,
+        'dataset_id': request().dataset_id,
+        'dataset_variable': request().dataset_variable,
+    }
 
 
 @pytest.mark.parametrize('prefix',['approximately','about','around'])
