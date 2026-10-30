@@ -16,7 +16,7 @@ const gridPoint={...point,coordinate_system:'IGR',coordinates_original:'IGR 3128
 const requirement={condition_id:'1',requirement_text:'Synthetic wind requirement',canonical_variable:'wind_speed_10m',source_spans:[],
   routing:{preferred_provider:'ECMWF_FORECAST'},status:'INSUFFICIENT_DATA'};
 const base={analysis_id:'synthetic-context',filename:'fixture.pdf',summary:{},environmental_requirements:[requirement],environmental_mapping:[requirement]};
-function show(extra={}) { render(<Environmental analysis={{...base,...extra}} session={{boot_id:'test'}}/>); const source=screen.queryByText('View permit location and date details');if(source) fireEvent.click(source); }
+function show(extra={}, props={}) { render(<Environmental analysis={{...base,...extra}} session={{boot_id:'test'}} {...props}/>); const source=screen.queryByText('View permit location and date details');if(source) fireEvent.click(source); }
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
 
 it('converts Irish Grid only on click then copies WGS84 without further requests',async()=>{
@@ -41,6 +41,32 @@ it('automatically fills an explicitly verified WGS84 point without fetching', as
   expect(screen.queryByText('View permit location and date details')).toBeNull();
   expect(screen.getByLabelText('Latitude')).toHaveValue(54.1);expect(screen.getByLabelText('Longitude')).toHaveValue(-6.1);
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it('lists approved source-backed points and preserves exact coordinates on selection', async()=>{
+  show({spatial_context:[point]}, {reviewData:{analysis_run_id:base.analysis_id, decision_context:{spatial_context:[point]}}});
+  const approved=screen.getByRole('button',{name:/Synthetic work point · 54.1, -6.1/});
+  expect(approved).toBeVisible();
+  await userEvent.click(approved);
+  expect(screen.getByLabelText('Latitude')).toHaveValue(54.1);
+  expect(screen.getByLabelText('Longitude')).toHaveValue(-6.1);
+});
+
+it.each([
+  ['unapproved', {...point, point_verified:false}],
+  ['source-unverified', {...point, source_verified:false}],
+])('explains the missing prerequisite for %s points and links to Human Review',(_, candidate)=>{
+  const onReview=vi.fn();
+  show({spatial_context:[candidate]}, {reviewData:{analysis_run_id:base.analysis_id, decision_context:{spatial_context:[candidate]}}, onReview});
+  expect(screen.getByText(/No approved, applicable, source-verified permit point is available/)).toBeVisible();
+  fireEvent.click(screen.getByRole('button',{name:'Open Human Review'}));
+  expect(onReview).toHaveBeenCalledTimes(1);
+});
+
+it('ignores stale review overlays when listing approved points',()=>{
+  show({spatial_context:[point]}, {reviewData:{analysis_run_id:'different-analysis', decision_context:{spatial_context:[point]}}});
+  expect(screen.queryByRole('button',{name:/Synthetic work point · 54.1, -6.1/})).not.toBeInTheDocument();
+  expect(screen.getByText(/No approved, applicable, source-verified permit point is available/)).toBeVisible();
 });
 
 it.each([
