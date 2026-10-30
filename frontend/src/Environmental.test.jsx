@@ -20,25 +20,24 @@ const doc = () => ({analysis_id:'fresh', filename:'synthetic-environment.pdf',mo
   summary:{permit_number:'TEST-ENV'},conditions:[],key_limits:[],geofences:[],
   environmental_requirements:[row],environmental_mapping:[row]});
 const session = {boot_id:'boot',mode:'MOCK',provider_status:{COPERNICUS_MARINE:'Credentials required',ECMWF_FORECAST:'Public endpoint configured · connection not tested'}};
+it('identifies reused downloaded data without requesting providers on display',()=>{
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  render(<Environmental analysis={doc()} session={{...session,environmental_result:{analysis_id:'fresh',requirements:[row],evidence_groups:[],reused_downloaded_period:true}}}/>);
+  expect(screen.getByText(/Using previously downloaded data for this period/)).toBeVisible();
+  expect(fetch).not.toHaveBeenCalled();
+});
 
-// Exercise the staged UI; the connection probe is separate from evidence transport assertions.
 async function confirmLocation() {
-  if (screen.queryByRole('region',{name:'Check data sources'})) return true;
+  if (screen.queryByRole('region',{name:'Environmental data sources'})) return true;
   for (const [label,value] of [['Latitude','54'],['Longitude','-6'],['Planned start (UTC)','2026-10-13T00:00'],['Planned end (UTC)','2026-10-14T00:00']]) {
     const input=screen.getByLabelText(label);
     if (!input.value) fireEvent.change(input,{target:{value}});
   }
   await userEvent.click(screen.getByRole('button',{name:'Confirm Location & Time'}));
-  return !!screen.queryByRole('region',{name:'Check data sources'});
+  return !!screen.queryByRole('region',{name:'Environmental data sources'});
 }
 async function fetchThroughSteps() {
-  if (!screen.queryByRole('button',{name:'Fetch Environmental Data'})) {
-    if (!await confirmLocation()) return;
-    const evidenceFetch=globalThis.fetch;
-    globalThis.fetch=(url,options)=>url==='/api/environmental/connections' ? Promise.resolve({ok:true,json:async()=>({checks:{},provider_status:{},mock:true})}) : evidenceFetch(url,options);
-    await userEvent.click(screen.getByRole('button',{name:/^Check Connections/}));
-    await screen.findByRole('button',{name:'Fetch Environmental Data'});
-  }
+  if (!screen.queryByRole('button',{name:'Fetch Environmental Data'}) && !await confirmLocation()) return;
   await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
 }
 
@@ -211,14 +210,12 @@ describe('environmental evidence view', () => {
     const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
     render(<Environmental session={session} analysis={{...doc(),environmental_requirements:[row,row],environmental_mapping:[row,{...row,condition_id:'5',canonical_variable:'ais_status',routing:{preferred_provider:'EXTERNAL'},status:'EXTERNAL_EVIDENCE_REQUIRED'}]}}/>);
     await confirmLocation();
-    expect(screen.getAllByTestId('environment-row')).toHaveLength(2);
-    expect(screen.getByText(/Credentials required/)).toBeVisible();
-    expect(screen.getByText('REQUIRED · NOT CONFIGURED')).not.toBeVisible();
-    await confirmLocation();
-  openVariables();
-    expect(screen.getByText('REQUIRED · NOT CONFIGURED')).toBeVisible();
-    await userEvent.click(screen.getAllByText('Source and retrieval notes')[0]);
-    expect(screen.getAllByText('Page 2: Original synthetic requirement.')[0]).toBeVisible();
+    expect(screen.getAllByTestId('environment-variable')).toHaveLength(2);
+    expect(screen.getByText(/Configure your Copernicus Marine username/)).toBeVisible();
+    expect(screen.queryByText('Original synthetic requirement.')).toBeNull();
+    openVariables();
+    expect(screen.getAllByText('Permit unit: m')[0]).toBeVisible();
+    expect(screen.queryByText('Source and retrieval notes')).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
   });
   it('counts unique authoritative mapped conditions, not raw model rows', async () => {
@@ -299,7 +296,7 @@ describe('environmental evidence view', () => {
     await fetchThroughSteps();
     expect(await screen.findAllByTestId('evidence-card')).toHaveLength(1);
     await confirmLocation();
-    expect(screen.getAllByTestId('environment-row')).toHaveLength(2);
+    expect(screen.getAllByTestId('environment-variable')).toHaveLength(1);
     expect(screen.getAllByTestId('threshold-check')).toHaveLength(2);
     await userEvent.click(screen.getByText('Full Evidence & Audit Details'));
     expect(within(screen.getByTestId('evidence-card')).getByText('COVERED')).toBeVisible();
@@ -317,8 +314,8 @@ describe('environmental evidence view', () => {
     const fetch=vi.fn(async()=>({ok:true,json:async()=>({requirements:rows,evidence_groups:[]})}));vi.stubGlobal('fetch',fetch);
     render(<Environmental session={session} analysis={doc()}/>);
     await fetchThroughSteps();
-    await waitFor(()=>expect(screen.getAllByTestId('environment-row')).toHaveLength(2));
-    await userEvent.click(screen.getAllByText('Source and retrieval notes')[0]);
+    await waitFor(()=>expect(screen.getAllByTestId('environment-variable')).toHaveLength(2));
+    openVariables();
     expect(screen.getAllByText(/Provider unit FNU is not comparable/).some(node=>node.closest('[data-testid="unavailable-requirement"]'))).toBe(true);
     expect(screen.queryAllByTestId('evidence-card')).toHaveLength(0);
   });
@@ -345,7 +342,7 @@ describe('environmental evidence view', () => {
     await fetchThroughSteps();
     await waitFor(()=>expect(fetch.mock.calls.filter(([url])=>url==='/api/environmental')).toHaveLength(1));
     await user.click(screen.getByRole('button',{name:'New Analysis'}));
-    expect(screen.queryAllByTestId('environment-row')).toHaveLength(0);
+    expect(screen.queryAllByTestId('environment-variable')).toHaveLength(0);
     expect(screen.queryByText('FETCHED-MOCK-EVIDENCE')).not.toBeInTheDocument();
     expect(fetch.mock.calls.filter(([url])=>url==='/api/analyze')).toHaveLength(1);
   });
@@ -360,7 +357,7 @@ it.each([
   render(<Environmental session={session} analysis={{...doc(),environmental_mapping:[mapped]}}/>);
   await confirmLocation();
   openVariables();
-  await userEvent.click(screen.getByText('Source and retrieval notes'));
+
   const input=screen.queryByLabelText('Manual FNU threshold · condition 4');
   if(visible){
     expect(input).toBeVisible();await userEvent.type(input,'27');
@@ -376,7 +373,7 @@ it('manual input is only sent on explicit Fetch and invalid values never unlock 
   render(<Environmental session={session} analysis={{...doc(),environmental_mapping:[mapped]}}/>);
   await confirmLocation();
   openVariables();
-  await userEvent.click(screen.getByText('Source and retrieval notes'));
+
   const input=screen.getByLabelText('Manual FNU threshold · condition 4');
   fireEvent.change(input,{target:{value:'-1'}});
   expect(fetch).not.toHaveBeenCalled();

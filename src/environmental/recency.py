@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import math
 
 TURBIDITY_MAX_AGE_HOURS = 72
+TURBIDITY_REFERENCE_LOOKBACK_HOURS = 30 * 24
 OXYGEN_MAX_AGE_HOURS = 24
 WAVE_HEIGHT_MAX_AGE_MINUTES = 90
 

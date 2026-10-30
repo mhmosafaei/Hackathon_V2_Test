@@ -52,11 +52,43 @@ def run(reviews,env,**options):
     return assess(reviews,env,start=T,now=T,**options)
 
 
+@pytest.mark.parametrize('value,expected', [(1.112,'WORK'),(26.,'STOP')])
+def test_explicit_demo_turbidity_compares_assumption_and_preserves_source(value,expected):
+    reviews,env=fixture('turbidity',unit='FNU',threshold=25.,evidence_type='observation',
+        requirement_text='STOP condition: turbidity greater than 25 FNU.')
+    row=env['requirements'][0]
+    row.pop('evidence')
+    row['request']={'coordinates':[54,-6],'start_time':T.isoformat(),'end_time':(T+timedelta(hours=24)).isoformat()}
+    row['historical_reference']={'raw_value':value,'unit':'FNU','data_time':(T-timedelta(days=11)).isoformat(),
+        'reference_only':True,'qualifies_for_decision':False,'dataset_id':'OBSERVATION_FIXTURE'}
+    before=deepcopy((reviews,env))
+    normal=run(reviews,env)
+    assert normal['current_assessment']['rule_results'][0]['status']=='UNKNOWN'
+    result=run(reviews,env,demo_turbidity=True)
+    assert result['current_assessment']['status']==expected
+    assert result['audit']['demo_turbidity'] and result['audit']['demo_assumptions']
+    assert result['current_assessment']['rule_results'][0]['reason_code']=='PLANNING_TURBIDITY_ASSUMPTION'
+    assert bool(result['candidate_windows'])==(expected=='WORK')
+    assert (reviews,env)==before
+    reviews['requirements'][0]['source']['source_verified']=False
+    assert run(reviews,env,demo_turbidity=True)['current_assessment']['status']=='UNKNOWN'
+
+
 def test_all_pass_work_and_original_unchanged():
     reviews,env=fixture();before=deepcopy((reviews,env));result=run(reviews,env)
     assert result['current_assessment']['status']=='WORK'
     assert result['candidate_windows'][0]['duration_hours']==6
     assert (reviews,env)==before
+
+
+def test_configured_2d_surface_current_does_not_require_an_absent_vertical_axis():
+    from src.environmental.copernicus import products
+    reviews,env=fixture('surface_current_speed',unit='m/s',depth_requirement='surface')
+    evidence=env['requirements'][0]['evidence']
+    evidence.update(dataset_id=products()['currents']['dataset'],selected_depth_m=None,depth=None)
+    assert run(reviews,env)['current_assessment']['status']=='WORK'
+    evidence['dataset_id']='UNVERIFIED_2D_PRODUCT'
+    assert run(reviews,env)['current_assessment']['status']=='UNKNOWN'
 
 
 @pytest.mark.parametrize('variable',['significant_wave_height','wind_gust'])

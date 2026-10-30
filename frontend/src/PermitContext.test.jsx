@@ -38,7 +38,7 @@ it('converts Irish Grid only on click then copies WGS84 without further requests
 it('automatically fills an explicitly verified WGS84 point without fetching', async()=>{
   const fetch=vi.fn();vi.stubGlobal('fetch',fetch);show({spatial_context:[point]});
   expect(screen.getByLabelText('Latitude')).toHaveValue(54.1);
-  await userEvent.click(screen.getByRole('button',{name:'Use location ↓'}));
+  expect(screen.queryByText('View permit location and date details')).toBeNull();
   expect(screen.getByLabelText('Latitude')).toHaveValue(54.1);expect(screen.getByLabelText('Longitude')).toHaveValue(-6.1);
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -118,9 +118,8 @@ it('copies explicit UTC operation times without fetching and leaves Fetch behavi
   fireEvent.change(screen.getByLabelText('Latitude'),{target:{value:'54'}});
   fireEvent.change(screen.getByLabelText('Longitude'),{target:{value:'-6'}});
   await userEvent.click(screen.getByRole('button',{name:'Confirm Location & Time'}));
-  await userEvent.click(screen.getByRole('button',{name:'Check Connections'}));
   await userEvent.click(await screen.findByRole('button',{name:'Fetch Environmental Data'}));
-  expect(fetch).toHaveBeenCalledTimes(2);expect(JSON.parse(fetch.mock.calls[1][1].body).end_time).toBe('2026-11-02T14:00:00Z');
+  expect(fetch).toHaveBeenCalledTimes(1);expect(JSON.parse(fetch.mock.calls[0][1].body).end_time).toBe('2026-11-02T14:00:00Z');
 });
 it('requires selection among locations and never reduces a route to its midpoint',async()=>{
   show({spatial_context:[point,{...point,location_name:'Source route',geometry_type:'route',point_verified:false}]});

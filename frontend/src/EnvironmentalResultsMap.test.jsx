@@ -29,6 +29,17 @@ it('never uses a masked or rejected native value as the displayed measurement',(
   expect(container.querySelector('output')).toHaveTextContent('Unavailable');
   expect(screen.getByTestId('map').dataset.value).not.toContain('99');
 });
+it('shows a latest historical turbidity reference with its date and age while retaining UNKNOWN',()=>{
+  const reference={raw_value:1.1117192506790161,unit:'FNU',data_time:'2026-10-20T00:00:00Z',age_hours:264,reference_only:true,qualifies_for_decision:false,provider:'COPERNICUS_MARINE',latitude:54.02546,longitude:-5.92505,note:'Historical context only; not a forecast.'};
+  const row={canonical_variable:'turbidity',condition_id:'14',status:'INSUFFICIENT_DATA',historical_reference:reference};
+  const {container}=render(<EnvironmentalResultsMap rows={[row]}/>);
+  expect(container.querySelector('output')).toHaveTextContent('1.112 FNU');
+  expect(screen.getByText('Historical observation · not a forecast')).toBeVisible();
+  expect(screen.getByText(/11 days before the planned start/)).toBeVisible();
+  expect(screen.getByText('NOT DETERMINED')).toBeVisible();
+  expect(screen.getByTestId('map').dataset.value).toContain('Historical reference');
+  expect(screen.getByTestId('map').dataset.value).toContain('2026-10-20');
+});
 it('accepts a valid polygon boundary without claiming area-wide evidence and rejects invalid geometry',()=>{
   const geometry={type:'Polygon',coordinates:[[[-6,54],[-5.9,54],[-5.9,54.1],[-6,54]]]};
   render(<EnvironmentalResultsMap rows={[wind]} result={{geometry}}/>);
@@ -38,4 +49,22 @@ it('accepts a valid polygon boundary without claiming area-wide evidence and rej
   expect(validGeometry({type:'Polygon',coordinates:[[[200,54],[201,54],[201,55],[200,54]]]})).toBeNull();
   expect(validPosition([null,null])).toBe(false);
   expect(queryPosition([],{})).toBeNull();
+});
+it('keeps source details collapsed and expands/collapses the map without losing the selected time',()=>{
+  const {container}=render(<EnvironmentalResultsMap rows={[wind]}/>);
+  const source=screen.getByText('Source & Coverage').closest('details');
+  expect(source.open).toBe(false);
+  expect(screen.getByLabelText('Evidence time (UTC)').closest('.environment-map-value')).not.toBeNull();
+  fireEvent.change(screen.getByLabelText('Evidence time (UTC)'),{target:{value:'1'}});
+  const previousOverflow=document.body.style.overflow;
+  fireEvent.click(screen.getByRole('button',{name:'Expand map'}));
+  expect(screen.getByRole('dialog',{name:'Map and environmental variables'})).toHaveClass('is-expanded');
+  expect(document.body.style.overflow).toBe('hidden');
+  expect(container.querySelector('output')).toHaveTextContent('5 m/s');
+  fireEvent.keyDown(document,{key:'Escape'});
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(document.body.style.overflow).toBe(previousOverflow);
+  expect(screen.getByRole('button',{name:'Expand map'})).toHaveFocus();
+  fireEvent.click(screen.getByText('Source & Coverage'));
+  expect(source.open).toBe(true);
 });

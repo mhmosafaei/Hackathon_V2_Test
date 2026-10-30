@@ -46,6 +46,7 @@ class DecisionInput(BaseModel):
     duration_hours: int = 4
     include_conditional: bool = False
     ranking: str = 'earliest'
+    demo_turbidity: bool = False
 
 
 
@@ -80,7 +81,8 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
                                      'review_progress': reviews['review_progress']}, status_code=409)
             result = assess(reviews, app.state.environmental_results.get(inputs.analysis_run_id),
                 start=inputs.start, horizon_hours=inputs.horizon_hours, duration_hours=inputs.duration_hours,
-                include_conditional=inputs.include_conditional, ranking=inputs.ranking)
+                include_conditional=inputs.include_conditional, ranking=inputs.ranking,
+                demo_turbidity=inputs.demo_turbidity)
             app.state.decisions[inputs.analysis_run_id] = result
             app.state.invalidated_decisions.pop(inputs.analysis_run_id, None)
             return result
@@ -244,37 +246,21 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
             if transport and adapters is None:
                 from src.environmental.fixture import mock_evidence
                 adapters = {name: mock_evidence for name in ['COPERNICUS_MARINE', 'ECMWF_FORECAST', 'ERA5']}
+            from src.environmental.download_cache import prepare_cache
+            evidence_cache = prepare_cache(root, inputs.analysis_id, mock=bool(transport))
             result = await asyncio.to_thread(evaluate, analysis, inputs,
-                root/'cache'/'simple_environment'/app.state.boot_id/inputs.analysis_id, transports=adapters)
+                evidence_cache, transports=adapters, reuse_downloaded=True)
+            if not transport:
+                from src.environmental.turbidity_reference import attach_reference
+                result = await asyncio.to_thread(attach_reference,result,inputs,evidence_cache,
+                    allow_download=not result.get('reused_downloaded_period',False))
             result['mode'] = 'MOCK' if transport else 'LIVE'
+            result['query'] = inputs.model_dump(mode='json')
             # Associate only a successfully returned aggregate result. A
             # provider/evaluation exception leaves any prior result intact.
             stored_result = {**result, 'analysis_id': inputs.analysis_id}
             app.state.environmental_results[inputs.analysis_id] = stored_result
             return result
-        finally:
-            app.state.busy = False
-
-    @app.post('/api/environmental/connections')
-    async def environmental_connections(inputs: EvaluationInput, request: Request):
-        origin = request.headers.get('origin')
-        if origin and origin != str(request.base_url).rstrip('/'):
-            return JSONResponse({'error':'Request origin rejected.'}, status_code=403)
-        if request.headers.get('x-session-id') != app.state.boot_id:
-            return JSONResponse({'error':'Application restarted. Refresh the session.'}, status_code=409)
-        analysis = app.state.analyses.get(inputs.analysis_id)
-        if not analysis:
-            return JSONResponse({'error':'No active analysis for this session.'}, status_code=404)
-        if inputs.latitude is None or inputs.start_time is None:
-            return JSONResponse({'error':'Confirm a location and UTC period first.'}, status_code=422)
-        if app.state.busy:
-            return JSONResponse({'error':'A request is already running.'}, status_code=409)
-        if transport:
-            return {'checks':{},'provider_status':{},'mock':True}
-        from src.environmental.connections import check_connections
-        app.state.busy = True
-        try:
-            return await asyncio.to_thread(check_connections, analysis, inputs)
         finally:
             app.state.busy = False
 

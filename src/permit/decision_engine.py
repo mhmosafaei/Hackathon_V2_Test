@@ -369,6 +369,26 @@ def evaluate_requirement(row, environment, start, end, now, linked):
         result.update(check_results=children, checks=[check for c in children for check in c['checks']],
                       evidence_references=[ref for c in children for ref in c['evidence_references']])
         return finish(primary['reason_code'], primary['explanation'], state)
+    # Explicit demo-only scenario: a historical observation is a constant assumed
+    # input, never retimestamped or inserted into the provider evidence cache.
+    if environment.get('demo_turbidity') and canonical(effective.get('canonical_variable')) == 'turbidity':
+        from .turbidity_demo import scenario
+        assumption = scenario(candidates, checks[0], start, end)
+        if assumption is not None:
+            result['demo_assumption'] = assumption
+            result['checks'] = [{'operator': checks[0]['operator'], 'threshold': checks[0]['threshold'],
+                'unit': 'FNU', 'status': assumption['status'], 'demo_only': True,
+                'values': [{'value': assumption['value'], 'unit': 'FNU',
+                    'valid_time': assumption['observation_time'], 'triggered': assumption['status'] == 'STOP',
+                    'demo_only': True}]}]
+            done = finish('PLANNING_TURBIDITY_ASSUMPTION', assumption['note'], assumption['status'])
+            diagnostics = done.get('diagnostics')
+            if diagnostics:
+                diagnostics['source_issues'] = diagnostics['issues']
+                diagnostics.update(evidence_availability='PLANNING_ASSUMPTION', evidence_eligibility='ASSUMED_INPUT',
+                    threshold_result=assumption['status'], issues=[{'code':'PLANNING_TURBIDITY_ASSUMPTION',
+                        'explanation':assumption['note'], 'action':'Replace with validated future turbidity evidence.'}])
+            return done
     all_states = []
     for check in checks:
         mapping = next((m for m in mappings if m.get('operator') == check.get('operator') and m.get('threshold') == check.get('threshold')), mappings[0])
@@ -435,8 +455,13 @@ def evaluate_requirement(row, environment, start, end, now, linked):
             return finish('DEPTH_UNSATISFIED', depth_error or 'Explicit source-backed oxygen depth is required.')
         if depth is not None:
             selected = evidence.get('selected_depth_m', evidence.get('depth'))
+            surface_product = False
+            if depth == 0 and selected is None and evidence.get('provider') == 'COPERNICUS_MARINE' and canonical(effective.get('canonical_variable')) in {'surface_current_speed','surface_current_direction','eastward_current','northward_current'}:
+                from src.environmental.copernicus import products
+                configured = products()['currents']['dataset']
+                surface_product = evidence.get('dataset_id') == configured and '-2D_' in configured
             try:
-                compatible_depth = selected is not None and math.isfinite(float(selected)) and abs(float(selected) - depth) <= .5
+                compatible_depth = surface_product or selected is not None and math.isfinite(float(selected)) and abs(float(selected) - depth) <= .5
             except (TypeError, ValueError):
                 compatible_depth = False
             if not compatible_depth:
@@ -612,13 +637,16 @@ def find_windows(timeline, duration_hours, include_conditional=False, ranking='e
 
 
 def assess(review_data, environmental_result=None, *, start=None, horizon_hours=72, duration_hours=4,
-           include_conditional=False, ranking='earliest', now=None):
+           include_conditional=False, ranking='earliest', now=None, demo_turbidity=False):
     now = utc(now or datetime.now(timezone.utc))
     requested_start = stamp(utc(start)) if start else None
     start = utc(start) if start else now
     if horizon_hours not in {24,48,72} or duration_hours not in {2,4,6,12} or ranking not in {'earliest','longest'}:
         raise ValueError('INVALID_DECISION_OPTIONS')
     environment = environmental_result if environmental_result and environmental_result.get('analysis_id') == review_data['analysis_run_id'] else None
+    if environment is not None and demo_turbidity:
+        environment = deepcopy(environment)
+        environment['demo_turbidity'] = True
     rows = deepcopy(review_data['requirements'])
     rows.extend(prerequisite_rows(review_data))
     end = start + timedelta(hours=horizon_hours)
@@ -716,6 +744,8 @@ def assess(review_data, environmental_result=None, *, start=None, horizon_hours=
                      for r in combined if r['has_evidence_gap']]
     audit = {'analysis_run_id': review_data['analysis_run_id'], 'document_sha256': review_data['document_sha256'],
              'decision_version':DECISION_VERSION, 'input_fingerprint':input_fingerprint(review_data,environmental_result),
+             'demo_turbidity': bool(demo_turbidity),
+             'demo_assumptions': [r['demo_assumption'] for r in current['rule_results'] if r.get('demo_assumption')],
              'requested_end':stamp(requested_end), 'clipped_to_confirmed_request':end != requested_end,
              'requested_start': requested_start,
              'assessed_at': stamp(now), 'start': stamp(start), 'end': stamp(end), 'horizon_hours': horizon_hours,

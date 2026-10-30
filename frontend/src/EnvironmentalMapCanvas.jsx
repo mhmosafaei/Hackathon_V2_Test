@@ -20,6 +20,7 @@ export default function EnvironmentalMapCanvas({position, sample, geometry, valu
   useEffect(()=>{
     const instance=L.map(container.current,{scrollWheelZoom:false,zoomControl:true}).setView([25,0],2);
     map.current=instance;
+    L.control.scale({position:'bottomright',metric:true,imperial:false,maxWidth:100}).addTo(instance);
     const tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(instance);
     tiles.on('tileerror',()=>setTileError(true));
     tiles.on('tileload',()=>setTileError(false));
@@ -38,7 +39,7 @@ export default function EnvironmentalMapCanvas({position, sample, geometry, valu
     const key=JSON.stringify([position,sample,shape,focusToken]);
     if (boundsKey.current!==key && group.getLayers().length) {
       map.current.invalidateSize();
-      map.current.fitBounds(group.getBounds(),{padding:[55,65],maxZoom:12,animate:false});
+      map.current.fitBounds(group.getBounds(),{padding:[55,65],maxZoom:11,animate:false});
       boundsKey.current=key;
     }
   },[position?.[0],position?.[1],sample?.[0],sample?.[1],geometry,valueLabel,focusToken]);
