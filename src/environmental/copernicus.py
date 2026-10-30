@@ -233,6 +233,22 @@ def worker(request):
             u_grid = np.asarray(first_grid['uo'].values)
             v_grid = np.asarray(first_grid['vo'].values)
             raw = np.where(np.isfinite(u_grid) & np.isfinite(v_grid), u_grid, np.nan)
+        elif group == 'waves':
+            # Select only cells where every wave field is finite for the whole
+            # returned span. Selecting on VHM0 alone can attach period or
+            # direction values from a masked/different-validity cell.
+            wave_units = {name: str(ds[name].attrs.get('units') or '').strip().lower() for name in variables}
+            expected_units = {'VHM0': {'m'}, 'VTM02': {'s'}, 'VMDR': {'degree', 'degrees'}}
+            if any(wave_units[name] not in expected_units[name] for name in variables):
+                raise ProviderError('UNIT_INCOMPATIBLE', 'Wave bundle fields do not declare the expected native units.')
+            wave_grid = _stage('spatial_selection', lambda: ds[variables].load())
+            valid = None
+            for name in variables:
+                values = np.asarray(wave_grid[name].values)
+                field_valid = np.all(np.isfinite(values), axis=0)
+                valid = field_valid if valid is None else (valid & field_valid)
+            first_wave = np.asarray(wave_grid[variables[0]].isel(time=0).values)
+            raw = np.where(valid, first_wave, np.nan)
         else:
             raw = np.asarray(field.values)
         grid = _stage('spatial_selection', lambda: nearest_valid(lat, lon, [(float(a), float(b), float(raw[i,j]) if np.isfinite(raw[i,j]) else None)
@@ -312,10 +328,10 @@ def worker(request):
                 'Current direction is towards, clockwise from north. Wave direction convention is provider-defined and is not converted between from/towards. No tide or local sensor equivalence. '
                 'Modelled oxygen is supportive and not equivalent to required in-situ monitoring. '
                 'Daily products cannot resolve subdaily excursions.',
-            'direction_convention': ('TOWARDS_CLOCKWISE_FROM_NORTH' if request.canonical_variable == 'surface_current_direction' else
-                                     'PROVIDER_DEFINED_NOT_NORMALIZED' if request.canonical_variable == 'mean_wave_direction' else None),
-            **({'direction_metadata': {key: ds[variable].attrs.get(key) for key in ('long_name','standard_name','units')}}
-               if request.canonical_variable == 'mean_wave_direction' else {}),
+             'direction_convention': ('TOWARDS_CLOCKWISE_FROM_NORTH' if request.canonical_variable == 'surface_current_direction' else
+                                      'PROVIDER_DEFINED_NOT_NORMALIZED' if group == 'waves' else None),
+             **({'direction_metadata': {key: ds['VMDR'].attrs.get(key) for key in ('long_name','standard_name','units')}}
+                if group == 'waves' else {}),
             'catalogue_reference_verified_at': product.get('live_verified')}
     finally:
         ds.close()
@@ -339,6 +355,9 @@ def project_current_or_wave_evidence(evidence, canonical_variable, dataset_varia
     result['canonical_variable'] = canonical_variable
     result['dataset_variable'] = dataset_variable
     if canonical_variable in {'significant_wave_height', 'mean_wave_period', 'mean_wave_direction'}:
+        if canonical_variable == 'mean_wave_direction':
+            result['direction_convention'] = 'PROVIDER_DEFINED_NOT_NORMALIZED'
+            result.setdefault('direction_metadata', {'dataset_variable': 'VMDR'})
         for point in result.get('points', []):
             source_values = point.get('source_values') or {}
             if dataset_variable in source_values:

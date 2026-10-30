@@ -121,6 +121,43 @@ def test_wave_bundle_preserves_independent_threshold_evaluations(tmp_path, monke
     assert rows['5']['evidence']['points'][0]['raw_value'] == 180.0
 
 
+def test_wave_bundle_order_and_disk_cache_preserve_each_projection(tmp_path, monkeypatch):
+    evaluation_inputs = inputs()
+    ds = wave_dataset().assign_coords(time=np.array([
+        np.datetime64(evaluation_inputs.start_time.replace(tzinfo=None)),
+        np.datetime64(evaluation_inputs.end_time.replace(tzinfo=None)),
+    ]))
+    calls = []
+    class Client:
+        def open_dataset(self, **kwargs):
+            calls.append(kwargs)
+            return ds.copy(deep=True)
+    monkeypatch.setattr(copernicus, '_load_worker_dependencies', lambda: (np, Client()))
+    raw = [
+        requirement('significant_wave_height', condition_id='3', threshold=1.0, operator='>', unit='m', source_spans=[{'page': 1, 'quotation': 'Wave height.'}]),
+        requirement('mean_wave_period', condition_id='4', threshold=5.0, operator='>', unit='s', source_spans=[{'page': 1, 'quotation': 'Wave period.'}]),
+        requirement('mean_wave_direction', condition_id='5', threshold=None, operator=None, unit='degrees', source_spans=[{'page': 1, 'quotation': 'Wave direction.'}]),
+    ]
+    first = evaluate(analysis(*raw), evaluation_inputs, tmp_path, transports={'COPERNICUS_MARINE': copernicus.worker})
+    assert len(calls) == 1
+    second = evaluate(analysis(*reversed(raw)), evaluation_inputs, tmp_path, transports={'COPERNICUS_MARINE': lambda _: pytest.fail('disk cache was not reused')})
+    for result in (first, second):
+        rows = {row['condition_id']: row for row in result['requirements']}
+        assert rows['3']['evidence']['points'][0]['raw_value'] == 1.2
+        assert rows['4']['evidence']['points'][0]['raw_value'] == 4.5
+        assert rows['5']['evidence']['points'][0]['raw_value'] == 180.0
+        assert rows['5']['evidence']['direction_convention'] == 'PROVIDER_DEFINED_NOT_NORMALIZED'
+
+
+def test_wave_bundle_rejects_cell_when_one_field_is_masked(monkeypatch):
+    ds = wave_dataset()
+    ds['VMDR'].values[0, 0, 0] = np.nan
+    mock_client(monkeypatch, ds)
+    with pytest.raises(ProviderError) as caught:
+        copernicus.worker(request('significant_wave_height'))
+    assert caught.value.category == 'SPATIAL_COVERAGE'
+
+
 def test_four_current_requirements_share_one_transport(tmp_path):
     calls=[]
     def transport(req):
