@@ -48,6 +48,7 @@ ALIASES = {'wave_direction': 'mean_wave_direction', 'wind_speed': 'wind_speed_10
            'sea_surface_height_m': 'sea_surface_height',
            'dissolved_oxygen_mg_per_l': 'dissolved_oxygen',
            'current_speed': 'surface_current_speed',
+           'current_speed_surface': 'surface_current_speed',
            'current_direction': 'surface_current_direction',
            'precipitation_accumulated_hourly': 'precipitation',
            'precipitation_hourly': 'precipitation',

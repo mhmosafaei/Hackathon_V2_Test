@@ -370,7 +370,7 @@ def compatible_points(requirement, request, evidence, *, now=None):
 
 
 def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=None,
-             condition_ids=None):
+             condition_ids=None, reuse_downloaded=False):
     # Keep provider imports lazy.  A caller that supplies an explicit transport
     # map (for example the Condition-40-only acceptance path) must not import
     # unrelated connectors and their optional dependencies.
@@ -385,6 +385,11 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
         if not scoped_ids:
             raise ValueError('Explicit environmental requirement scope cannot be empty')
         rows = [row for row in rows if str(row.get('condition_id')) in scoped_ids]
+    from .download_cache import verified_entries, period_available, normalized
+    config_path = Path(__file__).resolve().parents[2]/'config/environmental_data_sources.json'
+    config_version = sha256(config_path.read_bytes()).hexdigest()
+    downloaded = list(verified_entries(cache_dir, analysis['analysis_id'], config_version)) if reuse_downloaded else []
+    replay = reuse_downloaded and period_available(downloaded, inputs)
     dispatched = 0
     fetched = {}  # Per-click retrieval inputs only; thresholds evaluated independently.
     for row in rows:
@@ -504,13 +509,19 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
             else:
                 evidence = None
             cached = json.loads(path.read_text()) if path.exists() else None
+            if not cached and replay:
+                cached = next((entry for entry in downloaded if normalized(entry['retrieval']) == normalized(retrieval_inputs)), None)
             fresh = cached and cached.get('retrieval') == retrieval_inputs and (
                 datetime.now(timezone.utc)-utc(cached['evidence']['retrieved_at'])).total_seconds() <= 21600
+            if replay and cached and normalized(cached.get('retrieval', {})) == normalized(retrieval_inputs):
+                fresh = True
             if evidence is not None:
                 pass
             elif fresh:
                 evidence = cached['evidence']; row['cache_state'] = 'CACHED'
             else:
+                if replay:
+                    raise ProviderError('CACHED_EVIDENCE_UNAVAILABLE', 'No downloaded evidence matches this variable and query. This saved period is being reused without new provider downloads.')
                 if dispatched >= 12:
                     row['notes_for_evaluation'] = 'Per-click provider request limit (12) reached; remaining requirements not fetched.'
                     continue
@@ -586,6 +597,8 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
         if evidence and evidence.get('points'):
             states[row['routing']['preferred_provider']] = ('Mock transport only · not authenticated' if
                 str(evidence.get('dataset_id', '')).startswith('SYNTHETIC') else 'Connected · retrieval completed; evidence suitability still checked separately')
+            if replay:
+                states[row['routing']['preferred_provider']] = 'Saved evidence available · no new provider download'
     groups = {}
     for row in rows:
         if not row.get('evidence'):
@@ -608,6 +621,6 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
             group['evidence'] = gating[0]['evidence']
             group['status'] = ('INSUFFICIENT_DATA' if any(c['status']=='INSUFFICIENT_DATA' for c in gating) else
                                'THRESHOLD_EXCEEDED' if any(c['status']=='THRESHOLD_EXCEEDED' for c in gating) else 'WITHIN_THRESHOLD')
-    return {'requirements': rows, 'evidence_groups':list(groups.values()), 'provider_status': states, 'executable_rules': 0,
+    return {'requirements': rows, 'evidence_groups':list(groups.values()), 'provider_status': states, 'executable_rules': 0, 'reused_downloaded_period': bool(replay),
             'diagnostic_groups':[row for row in rows if row.get('diagnostic_evidence')],
             'notes': 'Environmental evidence only. Human review and deciding evidence remain required.'}

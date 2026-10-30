@@ -101,3 +101,6 @@ main>.workflow-guide:last-child{margin:28px 0 0}
  .workflow-guide-review .workflow-guide-heading-row h2{white-space:normal;}
  .workflow-guide-review .workflow-guide-heading-row .workflow-guide-actions{justify-content:flex-start;}
 }
+
+.workflow-guide-environment h2{font-size:34px;line-height:1.2;letter-spacing:-1.2px;font-weight:650;}
+@media(max-width:700px){.workflow-guide-environment h2{font-size:27px;}}

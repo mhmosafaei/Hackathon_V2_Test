@@ -46,6 +46,7 @@ class DecisionInput(BaseModel):
     duration_hours: int = 4
     include_conditional: bool = False
     ranking: str = 'earliest'
+    demo_turbidity: bool = False
 
 
 
@@ -80,7 +81,8 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
                                      'review_progress': reviews['review_progress']}, status_code=409)
             result = assess(reviews, app.state.environmental_results.get(inputs.analysis_run_id),
                 start=inputs.start, horizon_hours=inputs.horizon_hours, duration_hours=inputs.duration_hours,
-                include_conditional=inputs.include_conditional, ranking=inputs.ranking)
+                include_conditional=inputs.include_conditional, ranking=inputs.ranking,
+                demo_turbidity=inputs.demo_turbidity)
             app.state.decisions[inputs.analysis_run_id] = result
             app.state.invalidated_decisions.pop(inputs.analysis_run_id, None)
             return result
@@ -244,9 +246,16 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
             if transport and adapters is None:
                 from src.environmental.fixture import mock_evidence
                 adapters = {name: mock_evidence for name in ['COPERNICUS_MARINE', 'ECMWF_FORECAST', 'ERA5']}
+            from src.environmental.download_cache import prepare_cache
+            evidence_cache = prepare_cache(root, inputs.analysis_id, mock=bool(transport))
             result = await asyncio.to_thread(evaluate, analysis, inputs,
-                root/'cache'/'simple_environment'/app.state.boot_id/inputs.analysis_id, transports=adapters)
+                evidence_cache, transports=adapters, reuse_downloaded=True)
+            if not transport:
+                from src.environmental.turbidity_reference import attach_reference
+                result = await asyncio.to_thread(attach_reference,result,inputs,evidence_cache,
+                    allow_download=not result.get('reused_downloaded_period',False))
             result['mode'] = 'MOCK' if transport else 'LIVE'
+            result['query'] = inputs.model_dump(mode='json')
             # Associate only a successfully returned aggregate result. A
             # provider/evaluation exception leaves any prior result intact.
             stored_result = {**result, 'analysis_id': inputs.analysis_id}

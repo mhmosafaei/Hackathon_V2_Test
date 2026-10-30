@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import Environmental from './Environmental.jsx';
 import HumanReview, {reviewSummary} from './HumanReview.jsx';
 import HumanReviewOverview from './HumanReviewOverview.jsx';
@@ -66,8 +66,8 @@ const workflowSteps = [
 const workflowCopy = {
   permit: ['Understand the permit', 'Upload a permit and inspect the extracted conditions, limits and source text.', 'Analyze the PDF, then continue to Human Review.'],
   review: ['Human Review: Check the interpretation', '', 'Please resolve every AI-extracted item to unlock Environmental Intelligence and downstream decision assessment.'],
-  environment: ['Gather environmental evidence', 'See which permit conditions need environmental data, then request evidence for a confirmed point and UTC period.', 'Fetch data, or explicitly continue with an evidence gap if retrieval is unavailable.'],
-  decision: ['Assess work windows', 'Compare reviewed conditions with the evidence currently available.', 'Choose the work-window criteria and evaluate. Return to earlier steps whenever needed.']
+  environment: ['Environmental Intelligence: extract and fetch environmental data', '', ''],
+  decision: ['Decision & Work Windows', '', '']
 };
 function AppNav({tab, setTab, access, completed}) {
   const reasons = {review:'Analyze a permit first', environment:'Complete Human Review first', decision:'Complete the environmental evidence step first'};
@@ -138,10 +138,10 @@ function WorkflowGuide({tab, access, reviewProgress, reviewRows, environmentHand
     {next && <button type="button" className="button primary" disabled={!access[next[0]]} title={!access[next[0]] ? nextReason : undefined} onClick={() => onStep(next[0])}>Next: {next[2]}</button>}
     {next && !access[next[0]] && tab !== 'review' && <small>{nextReason}</small>}
   </div>;
-  return <section ref={guideRef} className={`workflow-guide ${compact ? 'workflow-guide-compact' : ''} ${tab === 'review' && !compact ? 'workflow-guide-review' : ''}`} aria-label={`Step ${index + 1} ${compact ? 'navigation' : 'guidance'}`}>
+  return <section ref={guideRef} className={`workflow-guide ${compact ? 'workflow-guide-compact' : ''} ${tab === 'review' && !compact ? 'workflow-guide-review' : ''} ${['environment','decision'].includes(tab) && !compact ? 'workflow-guide-environment' : ''}`} aria-label={`Step ${index + 1} ${compact ? 'navigation' : 'guidance'}`}>
     <div className="workflow-guide-intro"><span className="workflow-guide-label">STEP {index + 1} OF 4</span>
-      {!compact && <>{tab === 'review' ? <div className="workflow-guide-heading-row"><h2>{title}</h2>{stepActions}</div> : <h2>{title}</h2>}{description && <p>{description}</p>}{tab !== 'review' && <p className="workflow-guide-task"><strong>What to do:</strong> {task}</p>}
-        {tab === 'environment' && environmentHandled && <p className="workflow-guide-progress">Environmental evidence step handled. You can continue to the decision.</p>}</>}
+      {!compact && <>{tab === 'review' ? <div className="workflow-guide-heading-row"><h2>{title}</h2>{stepActions}</div> : <h2 id={tab === 'decision' ? 'decision-page-title' : undefined} tabIndex={tab === 'decision' ? -1 : undefined}>{title}</h2>}{description && <p>{description}</p>}{tab !== 'review' && task && <p className="workflow-guide-task"><strong>What to do:</strong> {task}</p>}
+</>}
     </div>
     {tab === 'review' && !compact && reviewProgress && <ReviewDashboard progress={reviewProgress} rows={reviewRows}/>}
     {tab === 'review' && !compact && <div className="workflow-review-instructions"><p className="workflow-review-main-instruction">{task}</p><p className="workflow-review-start"><span aria-hidden="true">↓ ↓ ↓</span><b>START REVIEW — work through each item below</b><span aria-hidden="true">↓ ↓ ↓</span></p><p><strong>Approve:</strong> Is the AI’s interpretation of the permit text correct?</p><p><strong>Applicable:</strong> Does this permit condition apply to the work you plan to do?</p></div>}
@@ -222,6 +222,7 @@ export function Results({analysis,reviewData,onReview,active=true}) {
   </>;
 }
 export default function App() {
+  const [environmentQuery,setEnvironmentQuery]=useState(null);
   const [session, setSession] = useState(null);
   const [file, setFile] = useState(null);
   const [currentAnalysis, setCurrentAnalysis] = useState(null);
@@ -248,6 +249,14 @@ export default function App() {
     else if (tab === 'environment' && !access.environment) setTab(access.review ? 'review' : 'permit');
     else if (tab === 'review' && !access.review) setTab('permit');
   }, [tab, access.review, access.environment, access.decision]);
+  useLayoutEffect(() => {
+    if (tab !== 'decision' || !access.decision) return;
+    document.getElementById('decision-page-title')?.focus({preventScroll:true});
+    const resetScroll = () => window.scrollTo({top:0,left:0,behavior:'instant'});
+    resetScroll();
+    const frame = window.requestAnimationFrame(resetScroll);
+    return () => window.cancelAnimationFrame(frame);
+  }, [tab, access.decision]);
   function acknowledgeEvidenceGap() {
     if (!currentAnalysis || !reviewComplete) return;
     setEnvironmentAcknowledged(true);
@@ -327,9 +336,9 @@ export default function App() {
   return <div className="app"><header className="header"><div className="brand"><img className="brand-symbol" src={brandLogo} alt=""/><div><img className="brand-wordmark" src={brandWordmark} alt="PermitPulse"/><span>Evidence first. Human review always.</span></div></div><AppNav tab={tab} setTab={setTab} access={access} completed={completed}/><button className="button secondary new-analysis" onClick={reset} disabled={status === 'loading'}><Plus size={16}/> New Analysis</button></header>
     <main className={tab === 'permit' && currentAnalysis ? 'main-permit-result' : undefined}>
     {(tab !== 'permit' || !currentAnalysis) && <WorkflowGuide tab={tab} access={access} reviewProgress={reviewProgress} reviewRows={reviewData?.requirements} environmentHandled={environmentHandled} onStep={setTab} onContinueWithoutEvidence={acknowledgeEvidenceGap}/>}
-    {tab === 'decision' && access.decision && <DecisionWorkWindows key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={assessmentStale ? {...session,decision_result:null} : session} reviewReady={reviewComplete} reviewProgress={reviewProgress} assessmentStale={assessmentStale} onEvaluated={decision=>{setAssessmentStale(false);setSession(previous=>previous ? {...previous,decision_result:decision,invalidated_assessment_id:null} : previous);}} onReview={id=>{setReviewTarget(id);setTab('review');}}/>}
+    {tab === 'decision' && access.decision && <DecisionWorkWindows environmentalStart={environmentQuery?.analysis_id === currentAnalysis?.analysis_id ? environmentQuery.start_time : null} key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={assessmentStale ? {...session,decision_result:null} : session} reviewReady={reviewComplete} reviewProgress={reviewProgress} assessmentStale={assessmentStale} onEvaluated={decision=>{setAssessmentStale(false);setSession(previous=>previous ? {...previous,decision_result:decision,invalidated_assessment_id:null} : previous);}} onReview={id=>{setReviewTarget(id);setTab('review');}}/>}
     {tab === 'review' && <HumanReview key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} initialTargetId={reviewTarget} onUpdated={updateReview} onLoaded={setReviewData}/>}
-    <div hidden={tab !== 'environment'}><Environmental key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} reviewData={reviewData ? {...reviewData,review_progress:reviewProgress} : null}/></div>
+    <div hidden={tab !== 'environment'}><Environmental key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} reviewData={reviewData ? {...reviewData,review_progress:reviewProgress} : null} onQueryConfirmed={setEnvironmentQuery} active={tab === 'environment'}/></div>
     <div hidden={tab !== 'permit'}>{currentAnalysis ? <Results analysis={currentAnalysis} reviewData={reviewData ? {...reviewData,review_progress:reviewProgress} : null} active={tab === 'permit'} onReview={id=>{setReviewTarget(id);setTab('review');}}/> : <>
       <div className="empty-heading"><div className="eyebrow">CLARITY BEFORE YOU OPERATE</div><h1>Analyze a Marine Permit</h1><p>Upload a PDF to extract its conditions, deadlines,<br className="desktop-break"/> operational limits and key compliance requirements.</p></div>
       <section className="upload-card card"><div className="upload-icon">{status === 'loading' ? <LoaderCircle className="spinner" size={30}/> : <Upload size={30}/>}</div>

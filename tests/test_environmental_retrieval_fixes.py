@@ -102,7 +102,7 @@ def test_partial_marine_override_keeps_weather_transport(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     import src.permit.simple_api as module
     seen=[]
-    def fake_evaluate(a,i,p,*,transports):seen.append(transports);return {'requirements':[]}
+    def fake_evaluate(a,i,p,*,transports,reuse_downloaded=False):seen.append(transports);return {'requirements':[]}
     monkeypatch.setattr(module,'evaluate',fake_evaluate)
     app=create_app(tmp_path,environmental_transports={'COPERNICUS_MARINE':lambda r:None})
     app.state.analyses['isolated-test']=analysis(requirement('wind_speed_10m'))

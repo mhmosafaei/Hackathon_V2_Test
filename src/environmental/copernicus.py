@@ -212,16 +212,19 @@ def worker(request):
         grid = _stage('spatial_selection', lambda: nearest_valid(lat, lon, [(float(a), float(b), float(raw[i,j]) if np.isfinite(raw[i,j]) else None)
             for i,a in enumerate(ds.latitude.values) for j,b in enumerate(ds.longitude.values)]))
         if group == 'turbidity':
-            from .recency import utc, TURBIDITY_MAX_AGE_HOURS
+            from .recency import utc, TURBIDITY_MAX_AGE_HOURS, TURBIDITY_REFERENCE_LOOKBACK_HOURS
             # Cloud/masked newest images must not hide an older compatible
             # observation. Search native grids newest first, within policy only.
             reference = utc(request.start_time)
+            reference_only = request.evidence_mode == 'historical_reference_only'
+            search_hours = TURBIDITY_REFERENCE_LOOKBACK_HOURS if reference_only else TURBIDITY_MAX_AGE_HOURS
+            ds[variable] = _stage('temporal_selection', lambda: ds[variable].load())
             candidates = sorted(((utc(str(t).split('.')[0]+'+00:00'), i)
                                  for i,t in enumerate(ds.time.values)), reverse=True)
             grid = None
             for moment, index in candidates:
                 age = (reference-moment).total_seconds()/3600
-                if not 0 <= age <= TURBIDITY_MAX_AGE_HOURS:
+                if not 0 <= age <= search_hours:
                     continue
                 raw = np.asarray(ds[variable].isel(time=index).transpose('latitude','longitude').values)
                 candidate = _stage('spatial_selection', lambda: nearest_valid(lat, lon,
