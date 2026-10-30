@@ -93,6 +93,20 @@ def test_wave_worker_fetches_shared_bundle_and_projects_requested_variable(monke
     projected = copernicus.project_current_or_wave_evidence(evidence, 'mean_wave_period', 'VTM02')
     assert projected['points'][0]['raw_value'] == 4.5
     assert projected['points'][0]['unit'] == 's'
+    assert projected['points'][0]['source_units'] == {'VHM0': 'm', 'VTM02': 's', 'VMDR': 'degrees'}
+    assert 'direction_convention' not in projected
+    assert 'direction_metadata' not in projected
+
+    direction = copernicus.project_current_or_wave_evidence(evidence, 'mean_wave_direction', 'VMDR')
+    assert direction['points'][0]['raw_value'] == 180.0
+    assert direction['points'][0]['unit'] == 'degrees'
+    assert direction['direction_convention'] == 'PROVIDER_DEFINED_NOT_NORMALIZED'
+
+    height = copernicus.project_current_or_wave_evidence(evidence, 'significant_wave_height', 'VHM0')
+    assert height['points'][0]['raw_value'] == 1.2
+    assert height['points'][0]['unit'] == 'm'
+    assert 'direction_convention' not in height
+    assert 'direction_metadata' not in height
 
 
 def test_wave_bundle_preserves_independent_threshold_evaluations(tmp_path, monkeypatch):
@@ -156,6 +170,21 @@ def test_wave_bundle_rejects_cell_when_one_field_is_masked(monkeypatch):
     with pytest.raises(ProviderError) as caught:
         copernicus.worker(request('significant_wave_height'))
     assert caught.value.category == 'SPATIAL_COVERAGE'
+
+
+def test_wave_projection_missing_variable_fails_closed_without_reusing_height():
+    source = {
+        'points': [{'source_values': {'VHM0': 1.2, 'VMDR': 180.0},
+                    'source_units': {'VHM0': 'm', 'VTM02': 's', 'VMDR': 'degrees'},
+                    'raw_value': 1.2, 'unit': 'm'}],
+        'direction_convention': 'PROVIDER_DEFINED_NOT_NORMALIZED',
+        'direction_metadata': {'units': 'degrees'},
+    }
+    projected = copernicus.project_current_or_wave_evidence(source, 'mean_wave_period', 'VTM02')
+    assert projected['points'][0]['raw_value'] is None
+    assert projected['points'][0]['unit'] == 's'
+    assert source['points'][0]['raw_value'] == 1.2
+    assert source['direction_convention'] == 'PROVIDER_DEFINED_NOT_NORMALIZED'
 
 
 def test_four_current_requirements_share_one_transport(tmp_path):

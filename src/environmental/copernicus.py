@@ -288,6 +288,8 @@ def worker(request):
         points = []
         for i, moment in enumerate(selected.time.values):
             source_values = {name: float(selected[name].isel(time=i).values) for name in variables}
+            source_units = ({name: selected[name].attrs.get('units') for name in variables}
+                            if group == 'waves' else None)
             first = source_values[variables[0]]
             value = first
             unit = selected[variables[0]].attrs.get('units')
@@ -310,7 +312,8 @@ def worker(request):
                 'component_values': {'uo': first if math.isfinite(first) else None,
                                      'vo': second if math.isfinite(second) else None} if group == 'currents' else None,
                 **({'component_units': component_units} if group == 'currents' else {}),
-                'source_values': {name: (value if math.isfinite(value) else None) for name, value in source_values.items()} if group == 'waves' else None})
+                'source_values': {name: (value if math.isfinite(value) else None) for name, value in source_values.items()} if group == 'waves' else None,
+                'source_units': source_units})
         return {'canonical_variable': request.canonical_variable, 'provider': 'COPERNICUS_MARINE', 'dataset_id': product['dataset'],
             'dataset_name': product['product'], 'dataset_variable': variable, 'source_version': ds.attrs.get('dataset_version'),
             'data_type': 'SATELLITE_OBSERVATION' if product['mode'] == 'OBSERVATION' else 'MODEL_FORECAST',
@@ -357,12 +360,24 @@ def project_current_or_wave_evidence(evidence, canonical_variable, dataset_varia
     if canonical_variable in {'significant_wave_height', 'mean_wave_period', 'mean_wave_direction'}:
         if canonical_variable == 'mean_wave_direction':
             result['direction_convention'] = 'PROVIDER_DEFINED_NOT_NORMALIZED'
-            result.setdefault('direction_metadata', {'dataset_variable': 'VMDR'})
+        else:
+            # Direction provenance belongs only to the direction projection;
+            # never leak it into height or period evidence.
+            result.pop('direction_convention', None)
+            result.pop('direction_metadata', None)
+            if isinstance(result.get('notes'), str):
+                result['notes'] = result['notes'].replace(
+                    'Wave direction convention is provider-defined and is not converted between from/towards. ', '')
         for point in result.get('points', []):
             source_values = point.get('source_values') or {}
-            if dataset_variable in source_values:
-                point['raw_value'] = source_values[dataset_variable]
-                point['unit'] = {'VHM0': 'm', 'VTM02': 's', 'VMDR': 'degrees'}.get(dataset_variable, point.get('unit'))
+            source_units = point.get('source_units') or {}
+            value = source_values.get(dataset_variable)
+            valid = (isinstance(value, (int, float)) and not isinstance(value, bool)
+                     and math.isfinite(value))
+            point['raw_value'] = value if valid else None
+            # Preserve the provider's native unit exactly.  A missing unit is
+            # not replaced with a guessed value.
+            point['unit'] = source_units.get(dataset_variable)
         return result
     if canonical_variable in {'eastward_current', 'northward_current', 'surface_current_speed', 'surface_current_direction'}:
         result['direction_convention'] = 'TOWARDS_CLOCKWISE_FROM_NORTH' if canonical_variable == 'surface_current_direction' else None
@@ -384,7 +399,10 @@ def project_current_or_wave_evidence(evidence, canonical_variable, dataset_varia
             point['derived_from'] = ['uo', 'vo']
         elif canonical_variable in {'significant_wave_height', 'mean_wave_period', 'mean_wave_direction'}:
             source = point.get('source_values') or {}
-            if dataset_variable in source:
-                point['raw_value'] = source[dataset_variable]
-                point['unit'] = {'VHM0':'m','VTM02':'s','VMDR':'degrees'}.get(dataset_variable, point.get('unit'))
+            source_units = point.get('source_units') or {}
+            value = source.get(dataset_variable)
+            valid = (isinstance(value, (int, float)) and not isinstance(value, bool)
+                     and math.isfinite(value))
+            point['raw_value'] = value if valid else None
+            point['unit'] = source_units.get(dataset_variable)
     return result
