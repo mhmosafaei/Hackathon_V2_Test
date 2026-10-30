@@ -84,7 +84,7 @@ function ChartIcon({index, type}) {
   const Icon = type === 'pie' ? PieChartIcon : index === 1 ? ListChecks : BarChart3;
   return <Icon size={19} aria-hidden="true"/>;
 }
-export function Results({analysis}) {
+export function Results({analysis, active = true}) {
   const [search, setSearch] = useState('');
   const [phase, setPhase] = useState('ALL');
   const data = chartData(analysis.conditions);
@@ -105,7 +105,7 @@ export function Results({analysis}) {
       <div className="table-scroll"><table><thead><tr>{['#', 'Phase', 'Requirement', 'Important Limit / Timing', 'Category', 'Page'].map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{shown.map(c => <tr key={c.number} data-testid="condition-row"><td className="number">{c.number}</td><td><span className={`badge phase-${c.phase.toLowerCase()}`}>{pretty(c.phase)}</span></td><td className="requirement">{c.requirement}<details><summary><ChevronDown size={13}/> Source evidence · {c.source_verified ? <><CheckCircle2 size={12}/> quote verified</> : <><AlertTriangle size={12}/> verification required</>}</summary>{c.source_spans.map((s, i) => <blockquote key={i}><b>Physical page {s.page}</b><p>{s.quotation}</p></blockquote>)}</details></td><td>{c.important_limit && <p>{c.important_limit}</p>}{c.timing && <p>{c.timing}</p>}{!c.important_limit && !c.timing && <span className="muted">Not stated</span>}</td><td><span className="category"><CategoryIcon category={c.category}/>{c.category}</span></td><td>{[...new Set(c.source_spans.map(s => s.page))].join(', ') || 'Unresolved'}</td></tr>)}</tbody></table></div>
       {!shown.length && <p className="no-results">No conditions match these filters.</p>}
     </section>
-    <div className="chart-grid"><Chart title={<><ChartIcon index={0} type="bar"/>Conditions by Phase</>} data={data.phase} type="bar" index={0}/><Chart title={<><ChartIcon index={1} type="bar"/>Conditions by Requirement Type</>} data={data.category} type="bar" index={1}/><Chart title={<><ChartIcon type="pie"/>Permit Conditions by Phase</>} data={data.phase} type="pie"/><Chart title={<><ChartIcon type="pie"/>Conditions with Explicit Limits</>} data={data.limits} type="pie"/></div>
+    {active && <div className="chart-grid"><Chart title={<><ChartIcon index={0} type="bar"/>Conditions by Phase</>} data={data.phase} type="bar" index={0}/><Chart title={<><ChartIcon index={1} type="bar"/>Conditions by Requirement Type</>} data={data.category} type="bar" index={1}/><Chart title={<><ChartIcon type="pie"/>Permit Conditions by Phase</>} data={data.phase} type="pie"/><Chart title={<><ChartIcon type="pie"/>Conditions with Explicit Limits</>} data={data.limits} type="pie"/></div>}
     <footer className="safety"><AlertTriangle size={22}/><p><strong>AI-extracted permit information. Review against the original licence before operational use.</strong><br/><span>No conditions are approved and no operational authorization is issued.</span></p></footer>
   </>;
 }
@@ -177,7 +177,7 @@ export default function App() {
     {tab === 'decision' && <DecisionWorkWindows key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} onEvaluated={decision=>setSession(previous=>previous ? {...previous,decision_result:decision,invalidated_assessment_id:null} : previous)} onReview={id=>{setReviewTarget(id);setTab('review');}}/>}
     {tab === 'review' && <HumanReview key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session} initialTargetId={reviewTarget}/>}
     <div hidden={tab !== 'environment'}><Environmental key={currentAnalysis?.analysis_id || 'empty'} analysis={currentAnalysis} session={session}/></div>
-    <div hidden={tab !== 'permit'}>{currentAnalysis ? <Results analysis={currentAnalysis}/> : <>
+    <div hidden={tab !== 'permit'}>{currentAnalysis ? <Results analysis={currentAnalysis} active={tab === 'permit'}/> : <>
       <div className="empty-heading"><div className="eyebrow">CLARITY BEFORE YOU OPERATE</div><h1>Analyze a Marine Permit</h1><p>Upload a PDF to extract its conditions, deadlines,<br className="desktop-break"/> operational limits and key compliance requirements.</p></div>
       <section className="upload-card card"><div className="upload-icon">{status === 'loading' ? <LoaderCircle className="spinner" size={30}/> : <Upload size={30}/>}</div>
         {status === 'loading' ? <div role="status"><h2>Analyzing permit…</h2><p>Reading your document and extracting conditions, limits and deadlines.</p><div className="progress-track"><div/></div><small>Preparing your dashboard. Please keep this window open.</small></div> : <>
