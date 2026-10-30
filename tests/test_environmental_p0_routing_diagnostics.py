@@ -4,7 +4,7 @@ import pytest
 from src.environmental.catalog import canonical
 from src.environmental.errors import ProviderError
 from src.environmental.router import route
-from src.environmental.service import evaluate
+from src.environmental.service import evaluate, map_requirements
 from tests.test_simple_environment import analysis, inputs, requirement
 
 
@@ -21,6 +21,10 @@ def test_marine_waves_win_over_reanalysis(variable):
     ("eastward_current_component_u", "eastward_current"),
     ("northward_current_component_v", "northward_current"),
     ("current_direction_towards", "surface_current_direction"),
+    ("surface current speed", "surface_current_speed"),
+    ("current speed surface", "surface_current_speed"),
+    ("current component eastward", "eastward_current"),
+    ("current component northward", "northward_current"),
 ])
 def test_persisted_component_aliases_reach_marine_router(raw, expected):
     assert canonical(raw) == expected
@@ -28,6 +32,20 @@ def test_persisted_component_aliases_reach_marine_router(raw, expected):
     assert routed["canonical_variable"] == expected
     assert routed["preferred_provider"] == "COPERNICUS_MARINE"
     assert routed["implemented"] is True
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("current speed surface", "surface_current_speed"),
+    ("current component eastward", "eastward_current"),
+    ("current component northward", "northward_current"),
+    ("surface current direction", "surface_current_direction"),
+])
+def test_latest_current_interpretation_aliases_are_canonicalized_before_mapping(raw, expected):
+    row = requirement(raw, condition_id="current-alias", unit="m/s",
+                      source_spans=[{"page": 1, "quotation": f"{raw} shall be reviewed."}])
+    mapped = map_requirements(analysis(row))[0]
+    assert mapped["canonical_variable"] == expected
+    assert mapped["routing"]["preferred_provider"] == "COPERNICUS_MARINE"
 
 
 def test_atmospheric_reanalysis_remains_era5():
