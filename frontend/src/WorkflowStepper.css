@@ -12,7 +12,7 @@ main>.workflow-guide:last-child{margin:28px 0 0}
 
 .workflow-guide-compact{padding:14px 24px;margin-top:28px}.workflow-guide-compact .workflow-guide-actions{min-width:0}
 
-.workflow-guide-review{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);grid-template-areas:'intro actions' 'dashboard metrics';grid-template-rows:auto 1fr;align-items:start;column-gap:26px;row-gap:22px;min-height:calc(100dvh - 142px);margin-bottom:14px;padding:24px}
+.workflow-guide-review{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);grid-template-areas:'intro actions' 'dashboard metrics' 'instructions instructions';grid-template-rows:auto 1fr auto;align-items:start;column-gap:26px;row-gap:18px;min-height:calc(100dvh - 142px);margin-bottom:14px;padding:24px}
 .workflow-guide-review .workflow-guide-intro{grid-area:intro}
 .workflow-guide-review h2{font-size:34px;line-height:1.2;letter-spacing:-1.2px;font-weight:650}
 .workflow-guide-review .workflow-guide-task{margin-top:10px}
@@ -22,11 +22,85 @@ main>.workflow-guide:last-child{margin:28px 0 0}
 .workflow-guide-review .human-review-overview{grid-area:metrics;align-self:center;width:100%;margin:0}
 .workflow-guide-review .human-review-overview .overview-metrics{grid-template-columns:repeat(3,minmax(0,1fr));margin:0}
 .workflow-review-dashboard{grid-area:dashboard;align-self:center;display:flex;align-items:center;gap:14px;padding:16px;border:1px solid #d7e5eb;border-radius:12px;background:#f7fbfd;min-width:0;width:100%}
+.workflow-review-instructions{grid-area:instructions;max-width:980px;margin:0 auto;padding:17px 22px;border:1px solid #cfe2eb;border-radius:12px;background:#f7fbfd;color:#355a68;font-size:14px;line-height:1.55}.workflow-review-instructions p{margin:6px 0}.workflow-review-instructions .workflow-review-main-instruction{margin-bottom:10px;color:#173d55;font-size:17px;font-weight:700;line-height:1.45}.workflow-review-instructions .workflow-review-start{font-size:18px;font-weight:750;color:#126b8f}.workflow-review-start span{display:inline-block;margin-right:8px;animation:review-down-cue 1s ease-in-out infinite}@keyframes review-down-cue{0%,100%{transform:translateY(-2px);opacity:.45}50%{transform:translateY(5px);opacity:1}}@media(prefers-reduced-motion:reduce){.workflow-review-start span{animation:none}}
 .workflow-review-gauge{width:74px;height:74px;flex:0 0 74px;display:grid;place-items:center;border-radius:50%;background:conic-gradient(#10a878 0 var(--applicable-end),#ef4b55 var(--applicable-end) var(--not-applicable-end),#a8bacb var(--not-applicable-end) 100%);position:relative}
 .workflow-review-gauge::before{content:'';position:absolute;inset:8px;border-radius:50%;background:#fff}
 .workflow-review-gauge span{position:relative;display:grid;text-align:center;color:#173544;font-size:17px;font-weight:800;line-height:1}.workflow-review-gauge small{font-size:9px;font-weight:500;margin-top:2px}
 .workflow-review-stats{display:grid;gap:3px;min-width:0;font-size:11px;color:#567080}.workflow-review-stats>strong{font-size:13px;color:#173544}.workflow-applicability{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-top:3px}.workflow-applicability span{font-size:10px}.workflow-applicability b{color:#173544}
 .workflow-applicability i{display:inline-block;width:8px;height:8px;margin-right:3px;border-radius:50%}.workflow-applicable-dot{background:#10a878}.workflow-not-applicable-dot{background:#ef4b55}.workflow-unassessed-dot{background:#a8bacb}
-@media(max-width:900px){.workflow-guide-review{grid-template-columns:1fr;grid-template-areas:'intro' 'actions' 'dashboard' 'metrics';grid-template-rows:auto;min-height:0;row-gap:16px}.workflow-guide-review .workflow-guide-actions{justify-content:flex-start}.workflow-guide-review .workflow-guide-actions small{text-align:left}.workflow-review-dashboard{max-width:430px}.workflow-guide-review .human-review-overview{align-self:auto}}
+@media(max-width:900px){.workflow-guide-review{grid-template-columns:1fr;grid-template-areas:'intro' 'actions' 'dashboard' 'metrics' 'instructions';grid-template-rows:auto;min-height:0;row-gap:16px}.workflow-guide-review .workflow-guide-actions{justify-content:flex-start}.workflow-guide-review .workflow-guide-actions small{text-align:left}.workflow-review-dashboard{max-width:430px}.workflow-guide-review .human-review-overview{align-self:auto}.workflow-review-instructions{margin:0;width:100%;box-sizing:border-box}}
 @media(max-width:700px){.workflow-guide-review h2{font-size:27px}.workflow-review-dashboard{width:100%}.workflow-applicability{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}}
 @media(max-width:620px){.workflow-guide-review .human-review-overview .overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.workflow-review-gauge.workflow-readiness-gauge{background:conic-gradient(#10a878 0 var(--resolved-angle),#dce5ec var(--resolved-angle) 360deg)}
+.workflow-review-stats .readiness-complete{color:#087d5a}.workflow-review-stats .readiness-incomplete{color:#875b18}
+.workflow-readiness-counts{display:flex;flex-wrap:wrap;gap:14px;margin-top:7px;font-size:11px}.workflow-readiness-counts i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}.workflow-readiness-counts b{color:#173544}
+
+.workflow-guide-review{row-gap:6px;min-height:0;grid-template-rows:auto auto auto;padding-block:12px;}
+.workflow-review-instructions{width:100%;max-width:none;margin:0;box-sizing:border-box;}
+.workflow-review-instructions .workflow-review-start{display:flex;align-items:center;justify-content:center;gap:16px;text-align:center;}
+.workflow-review-start span{margin:0;white-space:nowrap;}
+.workflow-review-start b{font-weight:750;}
+@media(max-width:700px){.workflow-review-instructions .workflow-review-start{gap:8px;font-size:14px}}
+
+.workflow-review-instructions{padding-block:8px;}
+.workflow-review-instructions p{margin-block:3px;}
+.workflow-review-instructions .workflow-review-main-instruction{margin-bottom:5px;}
+.workflow-review-instructions .workflow-review-main-instruction{text-align:center;}
+
+@media(min-width:901px){
+ .workflow-guide-review{min-height:calc(100dvh - var(--review-guide-top, 194px));grid-template-rows:auto 1fr auto;padding-bottom:0;}
+}
+.workflow-review-stats .workflow-applicability{border-top:1px solid #dce7ed;padding-top:8px;margin-top:8px;gap:10px;}
+
+.workflow-review-dashboard{display:flex;flex-direction:column;align-items:stretch;gap:20px;padding:20px;background:#fff;}
+.review-completion-heading,.review-completion-caption{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.review-completion-heading{font-size:13px;color:#173544;margin-bottom:9px;}
+.review-completion-heading b{color:#147e8a;}
+.review-completion-track{height:9px;background:#e6eef2;border-radius:999px;overflow:hidden;}
+.review-completion-track>span{display:block;height:100%;background:#147e8a;border-radius:inherit;transition:width .25s ease;}
+.review-completion-caption{margin-top:8px;font-size:10px;color:#617b8c;flex-wrap:wrap;gap:4px;}
+.review-completion-caption .readiness-complete{color:#087d5a}.review-completion-caption .readiness-incomplete{color:#875b18}
+.review-applicability-block{display:flex;align-items:center;gap:22px;padding-top:18px;border-top:1px solid #e4edf2;}
+.workflow-review-gauge.review-applicability-gauge{width:106px;height:106px;flex:0 0 106px;background:conic-gradient(#10a878 0 var(--applicable-end),#e45868 var(--applicable-end) var(--not-applicable-end),#a8bacb var(--not-applicable-end) 360deg);}
+.review-applicability-gauge::before{inset:11px;}
+.review-applicability-gauge span{font-size:24px;}.review-applicability-gauge small{font-size:11px;}
+.review-applicability-legend{flex:1;display:grid;gap:9px;color:#365769;font-size:12px;}
+.review-applicability-legend>strong{font-size:13px;color:#173544;margin-bottom:2px;}
+.review-applicability-legend>div{display:grid;grid-template-columns:9px 1fr auto;align-items:center;gap:8px;}
+.review-applicability-legend i{width:9px;height:9px;border-radius:50%;}.review-applicability-legend b{color:#173544;}
+.workflow-guide-review .human-review-overview .overview-metrics{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+
+@media(min-width:901px){
+ .workflow-guide-review{grid-template-areas:'intro intro' 'dashboard actions' 'dashboard metrics' 'instructions instructions';grid-template-rows:auto auto 1fr auto;}
+ .workflow-guide-review .workflow-guide-intro h2{white-space:nowrap;}
+ .workflow-guide-review .workflow-guide-actions{align-self:end;}
+ .workflow-guide-review .human-review-overview{align-self:start;margin-top:12px;}
+}
+
+.workflow-review-summary{grid-area:metrics;align-self:stretch;min-width:0;padding:20px;border:1px solid #d7e5eb;border-radius:12px;background:#fff;display:flex;flex-direction:column;justify-content:center;gap:20px;}
+.workflow-guide-review .workflow-review-dashboard{align-self:stretch;justify-content:center;margin:0;}
+.workflow-review-dashboard .review-applicability-block{padding-top:0;border-top:0;}
+.workflow-guide-review .workflow-review-summary .human-review-overview{margin:0;align-self:auto;}
+.workflow-review-summary .review-completion-heading{font-size:14px;}
+@media(min-width:901px){
+ .workflow-guide-review{grid-template-areas:'intro intro' 'actions actions' 'dashboard metrics' 'instructions instructions';grid-template-rows:auto auto 1fr auto;row-gap:14px;}
+ .workflow-guide-review .workflow-guide-actions{justify-content:flex-end;}
+}
+
+.workflow-guide-review .workflow-guide-heading-row{display:flex;align-items:center;justify-content:space-between;gap:22px;}
+.workflow-guide-review .workflow-guide-heading-row h2{margin:4px 0 0;white-space:nowrap;}
+.workflow-guide-review .workflow-guide-heading-row .workflow-guide-actions{grid-area:auto;flex:0 0 auto;min-width:0;align-self:center;margin:0;}
+@media(min-width:901px){
+ .workflow-guide-review{grid-template-areas:'intro intro' 'dashboard metrics' 'instructions instructions';grid-template-rows:auto 1fr auto;row-gap:10px;}
+ .workflow-guide-review .workflow-guide-intro{grid-area:intro;}
+}
+@media(max-width:900px){
+ .workflow-guide-review{grid-template-areas:'intro' 'dashboard' 'metrics' 'instructions';grid-template-rows:auto;}
+ .workflow-guide-review .workflow-guide-heading-row{align-items:flex-start;flex-wrap:wrap;gap:8px 16px;}
+ .workflow-guide-review .workflow-guide-heading-row h2{white-space:normal;}
+ .workflow-guide-review .workflow-guide-heading-row .workflow-guide-actions{justify-content:flex-start;}
+}
+
+.workflow-guide-environment h2{font-size:34px;line-height:1.2;letter-spacing:-1.2px;font-weight:650;}
+@media(max-width:700px){.workflow-guide-environment h2{font-size:27px;}}

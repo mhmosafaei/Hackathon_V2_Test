@@ -1,45 +1,55 @@
-import React, { useState } from 'react';
-import { CheckCircle2, ShieldCheck, Search } from 'lucide-react';
+import React, {useState} from 'react';
+import {CheckCircle2} from 'lucide-react';
 import './HumanReviewBulk.css';
 import './HumanReviewBulkToolbar.css';
 
-const title = row => row.original?.requirement_text || row.original?.requirement || row.original?.description || `Condition ${row.condition_id}`;
-const reviewLabel = value => ({ APPROVED: 'Approved', REJECTED: 'Rejected', CORRECTED: 'Corrected', UNREVIEWED: 'Pending' }[value] || 'Pending');
-const applicabilityLabel = value => ({ APPLICABLE: 'Applicable', NOT_APPLICABLE: 'Not Applicable', UNASSESSED: 'Unassessed' }[value] || 'Unassessed');
-
-function BulkMenu({ mode, rows, data, session, onRefresh, close }) {
-  const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState(new Set());
-  const [reviewStatus, setReviewStatus] = useState('APPROVED');
-  const [applicability, setApplicability] = useState('UNASSESSED');
+export default function HumanReviewBulkToolbar({rows, data, session, onRefresh}) {
+  const [approve, setApprove] = useState(true);
+  const [applicability, setApplicability] = useState('APPLICABLE');
+  const [reviewer, setReviewer] = useState('Local reviewer');
   const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const eligible = rows.filter(row => row.kind !== 'spatial_context' && !row.conflict && (mode === 'review' ? Boolean(row.source?.source_verified) : true));
-  const displayed = rows.filter(row => row.kind !== 'spatial_context' && `${row.condition_id} ${title(row)}`.toLowerCase().includes(query.toLowerCase()));
-  const toggle = id => setSelected(previous => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next; });
-  async function submit() {
-    if (!selected.size || (mode === 'app' && applicability === 'UNASSESSED' && !note.trim() && false)) return;
-    const action = mode === 'review' ? reviewLabel(reviewStatus) : applicabilityLabel(applicability);
-    if (!window.confirm(`${mode === 'review' ? action + ' interpretations' : 'Set conditions to ' + action} for ${selected.size} selected condition(s)?`)) return;
-    let succeeded = 0; const failed = [];
-    for (const id of selected) {
-      const row = rows.find(item => item.target_id === id);
-      const payload = { analysis_run_id: data.analysis_run_id, document_sha256: data.document_sha256, review: { original_fingerprint: row.original_fingerprint, state: mode === 'review' ? reviewStatus : row.state, applicability: mode === 'review' ? row.applicability : applicability, corrections: row.review?.corrections || {}, reviewer: row.review?.reviewer || 'Local reviewer', note: mode === 'app' && applicability === 'NOT_APPLICABLE' ? note : row.review?.note || '' } };
-      try { const response = await fetch(`/api/reviews/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Session-Id': session.boot_id }, body: JSON.stringify(payload) }); if (!response.ok) throw new Error(`HTTP ${response.status}`); const updated = await response.json(); succeeded += 1; onRefresh(updated); } catch (error) { failed.push(`${row.condition_id}: ${error.message}`); }
-    }
-    setMessage(failed.length ? `${succeeded} succeeded; ${failed.length} failed — ${failed.join(' · ')}` : `${succeeded} operation(s) succeeded.`);
-    setSelected(new Set());
-  }
-  return <div className="bulk-popover" role="dialog">
-    <label className="bulk-search"><Search size={15} /><input aria-label="Search conditions" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search conditions…" /></label>
-    <div className="bulk-list">{displayed.map(row => { const canSelect = eligible.includes(row); return <label key={row.target_id}><input type="checkbox" disabled={!canSelect} checked={selected.has(row.target_id)} onChange={() => canSelect && toggle(row.target_id)} /><span><b>#{row.condition_id} · {title(row)}</b><small>Review: {reviewLabel(row.state)} · Applicability: {applicabilityLabel(row.applicability)}</small><small>{canSelect ? 'Eligible' : row.kind === 'spatial_context' ? 'Spatial review required' : row.conflict ? 'Review conflict' : row.state !== 'UNREVIEWED' && mode === 'review' ? 'Already reviewed' : !row.source?.source_verified ? 'Source unverified' : 'Ineligible'}</small></span></label>; })}</div>
-    <div className="bulk-controls"><button type="button" onClick={() => setSelected(new Set(eligible.map(row => row.target_id)))}>Select All Eligible</button><button type="button" onClick={() => setSelected(new Set())}>Clear Selection</button><span>{selected.size} selected · {displayed.length} conditions</span></div>
-    {mode === 'review' ? <select aria-label="Bulk review status" value={reviewStatus} onChange={event => setReviewStatus(event.target.value)}><option value="APPROVED">Approve interpretations</option><option value="REJECTED">Reject interpretations</option><option value="UNREVIEWED">Keep pending</option></select> : <><select aria-label="Bulk applicability" value={applicability} onChange={event => setApplicability(event.target.value)}><option value="UNASSESSED">Unassessed</option><option value="APPLICABLE">Applicable</option><option value="NOT_APPLICABLE">Not Applicable</option></select>{applicability === 'NOT_APPLICABLE' && <textarea aria-label="Justification" required value={note} onChange={event => setNote(event.target.value)} placeholder="Justification required" />}</>}
-    <button className="review-button review-primary" disabled={!selected.size || (mode === 'app' && applicability === 'NOT_APPLICABLE' && !note.trim())} onClick={submit}>{mode === 'review' ? 'Apply Review Status' : 'Apply Applicability'} ({selected.size})</button>{message && <p role="status">{message}</p>}<button type="button" className="bulk-close" onClick={close}>Close</button>
-  </div>;
-}
+  const excluded = rows.filter(row => row.source?.source_verified !== true || row.conflict);
+  const eligible = rows.filter(row => row.source?.source_verified === true && !row.conflict);
+  const missingJustification = applicability === 'NOT_APPLICABLE' && !note.trim();
 
-export default function HumanReviewBulkToolbar({ rows, data, session, onRefresh }) {
-  const [open, setOpen] = useState(null);
-  return <div className="review-bulk-toolbar"><button className="review-button" onClick={() => setOpen(open === 'review' ? null : 'review')}><CheckCircle2 size={15} />Bulk Review</button><button className="review-button" onClick={() => setOpen(open === 'app' ? null : 'app')}><ShieldCheck size={15} />Bulk Applicability</button>{open && <BulkMenu mode={open} rows={rows} data={data} session={session} onRefresh={onRefresh} close={() => setOpen(null)} />}</div>;
+  async function apply() {
+    if (!eligible.length || busy || !reviewer.trim() || missingJustification) return;
+    if (!window.confirm(`Save approval and applicability for ${eligible.length} eligible item(s)? ${excluded.length} item(s) will be skipped.`)) return;
+    setBusy(true); setMessage('');
+    let succeeded = 0; const failures = [];
+    for (const row of eligible) {
+      const review = {
+        original_fingerprint: row.original_fingerprint,
+        state: approve ? (Object.keys(row.review?.corrections || {}).length ? 'CORRECTED' : 'APPROVED') : row.state,
+        applicability,
+        corrections: row.review?.corrections || {}, reviewer,
+        note: applicability === 'NOT_APPLICABLE' ? note : row.review?.note || ''
+      };
+      try {
+        const response = await fetch(`/api/reviews/${encodeURIComponent(row.target_id)}`, {
+          method: 'PUT', headers: {'Content-Type': 'application/json', 'X-Session-Id': session.boot_id},
+          body: JSON.stringify({analysis_run_id: data.analysis_run_id, document_sha256: data.document_sha256, review})
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+        succeeded += 1; onRefresh(result);
+      } catch (error) { failures.push(`Condition ${row.condition_id}: ${error.message}`); }
+    }
+    setMessage(failures.length ? `${succeeded} applied; ${failures.length} failed. ${failures.join(' · ')}` : `${succeeded} item(s) updated.${excluded.length ? ` ${excluded.length} skipped; review them individually.` : ''}`);
+    setBusy(false);
+  }
+
+  return <article className="review-panel review-bulk-selection-panel">
+    <header className="bulk-review-header"><span className="review-label">MULTI-SELECT REVIEW</span><h2>{rows.length} item{rows.length === 1 ? '' : 's'} selected</h2><p>Review these items together, then save both decisions in one step.</p></header>
+    <section className="bulk-combined-form">
+      <label className="bulk-approval-check"><input type="checkbox" checked={approve} disabled={busy} onChange={event => setApprove(event.target.checked)}/><span><strong>Approve AI interpretations</strong><small>I have checked the selected interpretations against the permit wording.</small></span></label>
+      <div className="bulk-review-fields"><label>Applicability<select aria-label="Bulk Applicability value" disabled={busy} value={applicability} onChange={event => setApplicability(event.target.value)}><option value="APPLICABLE">Applicable to this work</option><option value="NOT_APPLICABLE">Not Applicable to this work</option><option value="UNASSESSED">Unassessed</option></select></label><label>Reviewer<input aria-label="Bulk reviewer" disabled={busy} value={reviewer} onChange={event => setReviewer(event.target.value)}/></label></div>
+      {applicability === 'NOT_APPLICABLE' && <label>Justification<textarea aria-label="Bulk Not Applicable justification" disabled={busy} value={note} onChange={event => setNote(event.target.value)} placeholder="Explain why these items do not apply"/></label>}
+      {excluded.length > 0 && <div className="bulk-skipped-notice" role="status"><strong>{excluded.length} item(s) excluded from this bulk action</strong><p>You can save the remaining {eligible.length} item(s). Skipped items remain available for individual review.</p><ul>{excluded.map(row=><li key={row.target_id}>Condition {row.condition_id}: {row.conflict ? 'Review conflict' : 'Source verification unresolved'}</li>)}</ul></div>}
+    </section>
+    <footer className="bulk-review-footer"><span>Changes apply to {eligible.length} eligible item(s).</span><button type="button" className="review-button review-primary" disabled={!eligible.length || busy || !reviewer.trim() || missingJustification} onClick={apply}><CheckCircle2 size={17}/>{busy ? 'Saving…' : 'Save Selected Reviews'}</button></footer>
+    {message && <p role="status">{message}</p>}
+  </article>;
 }
