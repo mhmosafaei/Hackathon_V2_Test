@@ -99,6 +99,12 @@ describe('simple session dashboard', () => {
     expect(d.category.map(v => v.value)).toEqual([4, 3, 3, 3, 3, 3, 3]);
     expect(d.limits.map(v => v.value)).toEqual([8, 14]);
   });
+  it('does not mount charts while the permit tab is hidden', () => {
+    const {rerender} = render(<Results analysis={fixture()} active={false}/>);
+    expect(screen.queryByTestId('chart')).not.toBeInTheDocument();
+    rerender(<Results analysis={fixture()} active/>);
+    expect(screen.getAllByTestId('chart')).toHaveLength(3);
+  });
   it('shows each chart topic once in the permit overview', async () => {
     network(); render(<App/>); const user = await upload(); await user.click(screen.getByRole('button', {name: 'Analyze', exact: true}));
     await screen.findByText('DEMO-2026');
