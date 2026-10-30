@@ -12,7 +12,22 @@ function Source({value}) {
     {value.source_spans?.map((s,i)=><blockquote key={i}>Page {s.page}: {s.quotation}</blockquote>)}
     <small>{value.source_verified ? 'Quotation verified · review before use' : 'Source verification required'}</small></details>;
 }
-export default function PermitContext({analysis, session, onLocation, onDates}) {
+export function ApprovedPointList({analysis, onLocation, onReview}) {
+  const locations = analysis.spatial_context?.length ? analysis.spatial_context : (analysis.geofences || []).map(g=>({
+    location_name:g.name, latitude:g.latitude, longitude:g.longitude, geometry_type:g.type,
+    source_verified:g.source_verified, point_verified:false
+  }));
+  const approvedPoints = locations.map((candidate, index) => ({candidate, index})).filter(({candidate}) =>
+    candidate?.geometry_type === 'point' && candidate?.source_verified === true && candidate?.point_verified === true &&
+    Number.isFinite(candidate.latitude) && Number.isFinite(candidate.longitude));
+  return <section className="approved-point-list" aria-label="Approved permit points">
+    <h3>Approved source-backed points</h3>
+    {approvedPoints.length ? <div>{approvedPoints.map(({candidate,index})=><button type="button" className="button secondary" key={`${index}-${candidate.latitude}-${candidate.longitude}`} onClick={()=>onLocation(candidate.latitude,candidate.longitude)}>
+      {candidate.location_name || `Permit point ${index + 1}`} · {candidate.latitude}, {candidate.longitude}
+    </button>)}</div> : <p className="context-warning">No approved, applicable, source-verified permit point is available. Complete the spatial-point review before fetching environmental evidence.{onReview && <> <button type="button" className="button secondary" onClick={onReview}>Open Human Review</button></>}</p>}
+  </section>;
+}
+export default function PermitContext({analysis, session, onLocation, onDates, onReview}) {
   const [selected, setSelected] = useState('');
   const [conversions, setConversions] = useState({});
   const pending = useRef(false);
@@ -64,6 +79,7 @@ export default function PermitContext({analysis, session, onLocation, onDates}) 
   return <section className="permit-context" aria-label="Permit-defined location and time">
     <h2>PERMIT-DEFINED LOCATION &amp; TIME</h2>
     <p>Values extracted from the uploaded permit. Review before using as environmental-query inputs.</p>
+    <ApprovedPointList analysis={analysis} onLocation={(lat,lon)=>{setSelected(String(locations.findIndex(candidate=>candidate.latitude===lat && candidate.longitude===lon)));onLocation(lat,lon);}} onReview={onReview}/>
     <div className="permit-context-grid">
       <article className="card"><h3>Work Location</h3>
         {locations.length > 1 && <><label>Choose a permit-defined location<select disabled={loading} value={selected} onChange={e=>setSelected(e.target.value)}>

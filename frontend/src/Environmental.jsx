@@ -1,5 +1,5 @@
 import React, {useState, useRef, useEffect} from 'react';
-import PermitContext from './PermitContext.jsx';
+import PermitContext, {ApprovedPointList} from './PermitContext.jsx';
 import RequirementProviders from './RequirementProviders.jsx';
 import EnvironmentalResultsMap from './EnvironmentalResultsMap.jsx';
 import {environmentDefaults, boundedPeriod} from './environmentDefaults.js';
@@ -65,8 +65,9 @@ const comparisonLabel = row => {
   return values.has(true) ? 'TRIGGERED' :
     values.size === 1 && values.has(false) ? 'NOT TRIGGERED' : 'NOT DETERMINED';
 };
-export default function Environmental({analysis, session, reviewData, onQueryConfirmed, active=true}) {
-  const defaults = environmentDefaults(analysis, reviewData);
+export default function Environmental({analysis, session, reviewData, onQueryConfirmed, onReview, active=true}) {
+  const currentReviewData = reviewData?.analysis_run_id === analysis?.analysis_id ? reviewData : null;
+  const defaults = environmentDefaults(analysis, currentReviewData);
   const edited = useRef(new Set());
   const dateAdjustmentKey=JSON.stringify([defaults.start,defaults.end,defaults.originalEnd]);
   const seenDateAdjustment=useRef(dateAdjustmentKey);
@@ -128,7 +129,8 @@ export default function Environmental({analysis, session, reviewData, onQueryCon
   const diagnostics = result?.diagnostic_groups?.length ? result.diagnostic_groups : rows.filter(r=>r.provider_diagnostic);
   const providers = result?.provider_status || session?.provider_status || {};
   const capabilities = session?.environmental_capabilities || [];
-  const permitContext = <PermitContext key={analysis?.analysis_id} analysis={{...analysis,...reviewData?.decision_context}} session={session}
+  const reviewedAnalysis = reviewData ? {...analysis, ...(currentReviewData?.decision_context || {}), ...(currentReviewData ? {} : {spatial_context: []})} : analysis;
+  const permitContext = <PermitContext key={analysis?.analysis_id} analysis={reviewedAnalysis} session={session} onReview={onReview}
     onLocation={(lat,lon)=>{edited.current.add('latitude');edited.current.add('longitude');setLatitude(String(lat));setLongitude(String(lon));setResult(null);}}
     onDates={(from,until)=>{edited.current.add('start');edited.current.add('end');setStart(from);setEnd(until);setResult(null);}}/>;
   function confirmInputs() {
@@ -191,7 +193,7 @@ export default function Environmental({analysis, session, reviewData, onQueryCon
   return <div className="environment-panel">
     {analysis.mode === 'MOCK' && <p className="notice warning">Offline preview · Any fetched values are synthetic mocked test evidence.</p>}
     {!extracted.length ? <>{permitContext}<div className="empty-state"><p>No explicit environmental data requirements were identified in this permit.</p></div></> : <>
-      <section className="card environment-controls environment-setup-step"><div className="environment-step-label">1 · LOCATION & TIME</div><h2>Confirm Location & Time</h2><p className="environment-prefill-note"><span className="environment-prefill-intro">Confirm where and when you plan to work, then fetch the environmental data required by your permit.</span></p>{!defaults.latitude && permitContext}
+      <section className="card environment-controls environment-setup-step"><div className="environment-step-label">1 · LOCATION & TIME</div><h2>Confirm Location & Time</h2><p className="environment-prefill-note"><span className="environment-prefill-intro">Confirm where and when you plan to work, then fetch the environmental data required by your permit.</span></p>{defaults.latitude && <ApprovedPointList analysis={reviewedAnalysis} onLocation={(lat,lon)=>{edited.current.add('latitude');edited.current.add('longitude');setLatitude(String(lat));setLongitude(String(lon));setResult(null);}} onReview={onReview}/>} {!defaults.latitude && permitContext}
         {!!analysis.geofences?.length && <details><summary>Source geographic restrictions · {analysis.geofences.length}</summary>{analysis.geofences.map((g,i) => <p key={i}><b>{g.name}</b> · {g.type}<br/>{g.coordinates_or_boundary || g.restriction}<br/>Physical pages {g.source_pages.join(', ')}</p>)}</details>}
         <label className="environment-scope-selector">Assessment Geometry<select value={scopeType} onChange={e=>{edited.current.add('scopeType');setScopeType(e.target.value);setResult(null);}}><option value="point">Point</option><option value="polygon">Polygon (coming soon)</option></select></label>
         {!pointOnly && <p role="status" className="environment-polygon-placeholder">Polygon input will be supported here in a future update. Select Point to retrieve data for one confirmed location.</p>}
