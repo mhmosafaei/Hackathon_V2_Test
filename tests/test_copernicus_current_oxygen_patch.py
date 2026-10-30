@@ -95,6 +95,32 @@ def test_wave_worker_fetches_shared_bundle_and_projects_requested_variable(monke
     assert projected['points'][0]['unit'] == 's'
 
 
+def test_wave_bundle_preserves_independent_threshold_evaluations(tmp_path, monkeypatch):
+    evaluation_inputs = inputs()
+    ds = wave_dataset().assign_coords(time=np.array([
+        np.datetime64(evaluation_inputs.start_time.replace(tzinfo=None)),
+        np.datetime64(evaluation_inputs.end_time.replace(tzinfo=None)),
+    ]))
+    calls = mock_client(monkeypatch, ds)
+    raw = [
+        requirement('significant_wave_height', condition_id='3', threshold=1.0, operator='>', unit='m',
+                    source_spans=[{'page': 1, 'quotation': 'Wave height above 1 m.'}]),
+        requirement('mean_wave_period', condition_id='4', threshold=5.0, operator='>', unit='s',
+                    source_spans=[{'page': 1, 'quotation': 'Wave period above 5 s.'}]),
+        requirement('mean_wave_direction', condition_id='5', threshold=None, operator=None, unit='degrees',
+                    source_spans=[{'page': 1, 'quotation': 'Wave direction in degrees.'}]),
+    ]
+    result = evaluate(analysis(*raw), evaluation_inputs, tmp_path, transports={'COPERNICUS_MARINE': copernicus.worker})
+    assert len(calls) == 1
+    rows = {row['condition_id']: row for row in result['requirements']}
+    assert rows['3']['evidence']['points'][0]['normalized_unit'] == 'm'
+    assert rows['4']['evidence']['points'][0]['normalized_unit'] == 's'
+    assert rows['3']['evidence']['points'][0]['comparison'] is True
+    assert rows['4']['evidence']['points'][0]['comparison'] is False
+    assert rows['5']['evidence']['points'][0]['normalized_unit'] == 'degrees'
+    assert rows['5']['evidence']['points'][0]['raw_value'] == 180.0
+
+
 def test_four_current_requirements_share_one_transport(tmp_path):
     calls=[]
     def transport(req):
