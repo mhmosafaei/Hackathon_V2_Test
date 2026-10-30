@@ -3,3 +3,8 @@
 .human-review-overview{display:block;margin-bottom:10px}.human-review-overview .overview-main{width:100%;box-sizing:border-box}.human-review-overview .overview-heading h1{margin:0 0 7px}.human-review-overview .overview-metrics{grid-template-columns:repeat(6,minmax(0,1fr));margin-top:14px}
 @media(max-width:1000px){.human-review-overview .overview-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:620px){.human-review-overview .overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.overview-applicability-summary{display:flex;flex-wrap:wrap;gap:12px 20px;padding:14px 16px;margin-top:12px;border:1px solid #dce8f2;border-radius:9px;background:#f7fbfd;}
+.overview-applicability-summary>span{display:flex;align-items:center;gap:7px;font-size:12px;color:#365769;}
+.overview-applicability-summary b{color:#173544;}
+.overview-applicability-summary .dot{flex:0 0 9px;margin:0;padding:0;}

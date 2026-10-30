@@ -1,0 +1,73 @@
+import React from 'react';
+import {render,screen,fireEvent,waitFor} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import {it,expect,vi,afterEach} from 'vitest';
+vi.mock('./EnvironmentalMapCanvas.jsx', async importOriginal => ({...await importOriginal(), default: ()=><div aria-label="Environmental evidence map"/>}));
+import Environmental from './Environmental.jsx';
+import {environmentDefaults} from './environmentDefaults.js';
+const point={geometry_type:'point',point_verified:true,source_verified:true,latitude:54.025,longitude:-5.925};
+const timing={source_verified:true,operation_start:'2026-10-30T12:00:00Z',operation_end:'2026-10-31T12:00:00Z'};
+const row={condition_id:'3',canonical_variable:'wind_speed_10m',routing:{preferred_provider:'ECMWF_FORECAST'},source_spans:[]};
+const analysis={analysis_id:'run',environmental_requirements:[row],environmental_mapping:[row],spatial_context:[point],temporal_context:timing};
+const session={boot_id:'boot'};
+afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
+it('only pre-fills a unique verified point and explicit UTC dates',()=>{
+  expect(environmentDefaults(analysis)).toMatchObject({latitude:'54.025',longitude:'-5.925',start:'2026-10-30T12:00'});
+  expect(environmentDefaults({...analysis,spatial_context:[point,{...point,longitude:2}],temporal_context:{...timing,operation_end:'2028-10-31T12:00:00Z'}})).toMatchObject({latitude:'',start:'2026-10-31T00:00',end:'2026-11-03T00:00'});
+  expect(environmentDefaults({...analysis,spatial_context:[{...point,point_verified:false}],temporal_context:{...timing,operation_start:'2026-10-30'}})).toMatchObject({latitude:'',start:''});
+});
+it('reveals data sources and fetch after confirmation without any connection probe',async()=>{
+  const fetch=vi.fn(async url=>({ok:true,json:async()=>url.endsWith('/connections') ? {checks:{ECMWF_FORECAST:{connected:true,message:'API reachable.'}},provider_status:{ECMWF_FORECAST:'Connected · connection check passed'}} : {requirements:[],evidence_groups:[]}}));
+  vi.stubGlobal('fetch',fetch);
+  render(<Environmental analysis={analysis} session={session}/>);
+  expect(screen.getByLabelText('Longitude')).toHaveValue(-5.925);
+  expect(screen.getByLabelText('Depth (m, when applicable)')).toHaveValue(0);
+  expect(screen.queryByRole('checkbox',{name:/Evaluate this confirmed point/})).toBeNull();
+  expect(screen.queryByRole('button',{name:'Check Connections'})).toBeNull();
+  expect(screen.queryByRole('button',{name:'Fetch Environmental Data'})).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button',{name:'Confirm Location & Time'}));
+  expect(screen.getByRole('region',{name:'Environmental data sources'}).style.scrollMarginTop).toBe('16px');
+  expect(fetch).not.toHaveBeenCalled();
+  await screen.findByRole('button',{name:'Fetch Environmental Data'});
+  expect(fetch).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+  await screen.findByText('Retrieved Environmental Evidence');
+  expect(fetch.mock.calls[0][0]).toBe('/api/environmental');
+  fireEvent.change(screen.getByLabelText('Longitude'),{target:{value:'-5'}});
+  expect(screen.queryByRole('button',{name:'Fetch Environmental Data'})).toBeNull();
+  expect(screen.queryByText('Retrieved Environmental Evidence')).toBeNull();
+});
+it('reserves polygon input without dispatching a point request for it',async()=>{
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  render(<Environmental analysis={analysis} session={session}/>);
+  await userEvent.selectOptions(screen.getByLabelText('Assessment Geometry'),'polygon');
+  expect(screen.getByText(/Polygon input will be supported here/)).toBeVisible();
+  expect(screen.getByRole('button',{name:'Confirm Location & Time'})).toBeDisabled();
+  expect(screen.queryByRole('button',{name:'Check Connections'})).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+  await userEvent.selectOptions(screen.getByLabelText('Assessment Geometry'),'point');
+  expect(screen.getByLabelText('Depth (m, when applicable)')).toHaveValue(0);
+});
+it('does not block Fetch on configured or untested provider states',async()=>{
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  render(<Environmental analysis={analysis} session={{...session,provider_status:{COPERNICUS_MARINE:'Credentials required'}}}/>);
+  await userEvent.click(screen.getByRole('button',{name:'Confirm Location & Time'}));
+  expect(screen.getByRole('button',{name:'Fetch Environmental Data'})).toBeEnabled();
+  expect(screen.queryByRole('button',{name:'Check Connections'})).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it('prefills a 72-hour window and displays a dismissible explanation without changing source dates',async()=>{
+  const source={...analysis,temporal_context:{...timing,operation_end:'2028-10-31T12:00:00Z'}};
+  const original=JSON.stringify(source);
+  render(<Environmental analysis={source} session={session}/>);
+  expect(screen.getByLabelText('Planned end (UTC)')).toHaveValue('2026-11-03T00:00');
+  expect(screen.getByRole('alert')).toHaveTextContent('Query window adjusted to 72 hours');
+  expect(screen.getByLabelText('Planned start (UTC)')).toHaveValue('2026-10-31T00:00');
+  expect(screen.getByRole('alert')).toHaveTextContent('Using the configured test query start.');
+  expect(screen.getByRole('alert')).toHaveTextContent('2028-10-31 12:00 UTC');
+  await userEvent.click(screen.getByRole('button',{name:'Dismiss date adjustment'}));
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(JSON.stringify(source)).toBe(original);
+});

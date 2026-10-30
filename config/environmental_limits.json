@@ -1,3 +1,4 @@
 {
-  "max_fetch_hours": 72
+  "max_fetch_hours": 72,
+  "demo_query_start_utc": "2026-10-31T00:00:00Z"
 }
