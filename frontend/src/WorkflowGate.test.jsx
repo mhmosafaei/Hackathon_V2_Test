@@ -44,7 +44,7 @@ it('unlocks after review, keeps review editable, and marks later changes stale',
   expect(screen.getByText('Review key permit details and limits here.')).toBeVisible();
   await user.click(within(nav).getByRole('button',{name:'Human Review'}));
   expect(screen.getByText('Check the interpretation')).toBeVisible();
-  expect(screen.getByText('Please resolve every AI-extracted item to unlock Environmental Intelligence and downstream decision assessment. You can return and edit later.')).toBeVisible();
+  expect(screen.getByText('Please resolve every AI-extracted item to unlock Environmental Intelligence and downstream decision assessment.')).toBeVisible();
   expect(screen.getByRole('button',{name:'Back: Permit Intelligence'})).toBeVisible();
   expect(screen.queryByRole('heading',{name:'Human Review'})).not.toBeInTheDocument();
   expect(screen.queryByText('Review the AI-extracted permit interpretation before it is used by downstream decision assessment.')).not.toBeInTheDocument();

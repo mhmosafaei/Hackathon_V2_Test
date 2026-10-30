@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Search, ShieldCheck, AlertTriangle, FileText, CheckCircle2, Pencil, XCircle, Clock, Database} from 'lucide-react';
+import {Search, AlertTriangle, FileText, CheckCircle2, Pencil, XCircle, Clock, Database} from 'lucide-react';
 import './HumanReview.css';
 import './HumanReviewReference.css';
 import './HumanReviewApplicability.css';
@@ -51,8 +51,9 @@ function Workspace({row,analysis,session,identity,draft,onDraft,onSaved}){
   }catch(e){setError(e.message);}finally{setBusy(false);}}
   return <><article className="review-panel review-workspace"><header><span className="review-label">Selected requirement · {label(row.kind)}</span><h2>Condition {row.condition_id}</h2><p>{title(row)}</p><span className={`review-badge review-${row.state.toLowerCase()}`}>{stateLabel(row.state)}</span><span className={`review-badge review-applicability-${String(row.applicability||'UNASSESSED').toLowerCase()}`}>{row.applicability==='APPLICABLE' ? 'Applicable' : row.applicability==='NOT_APPLICABLE' ? 'Not Applicable' : 'Unassessed'}</span>{row.kind === 'spatial_context' && row.applicability === 'UNASSESSED' && <p className="review-warning">Approving this location also marks it Applicable for this assessment.</p>}</header>
     <div className="review-compare"><section aria-label="Original document evidence"><h3><FileText size={17}/>Permit wording</h3><span className={`review-badge ${row.source.source_verified ? 'review-approved' : 'review-unreviewed'}`}>{row.source.source_verified ? 'Source verified' : 'Source unverified'}</span>{!row.source.source_verified && <p className="review-warning"><AlertTriangle size={16}/>Source verification is unresolved. Human approval does not verify the source.</p>}
-      {(row.source.source_spans || []).map((s,i)=><blockquote key={i}><small>Physical page {s.page}{s.model_declared_page!=null && s.model_declared_page!==s.page ? ` · Model-declared page ${s.model_declared_page} · Reconciled page ${s.reconciled_physical_page ?? s.page}` : ''}</small><p>{s.quotation}</p></blockquote>)}{!row.source.source_spans?.length && <p>Source quotation unavailable.</p>}
+      {(row.source.verified_source_spans || row.source.source_spans || []).map((s,i)=><blockquote key={i}><small>Physical page {s.page}{s.model_declared_page!=null && s.model_declared_page!==s.page ? ` · Model-declared page ${s.model_declared_page} · Reconciled page ${s.reconciled_physical_page ?? s.page}` : ''}</small><p>{s.quotation}</p></blockquote>)}{!row.source.source_spans?.length && <p>Source quotation unavailable.</p>}
       {row.source.source_reconciliation && <p>Reconciliation: {label(row.source.source_reconciliation.status)} · Model-declared page {row.source.model_declared_source_page ?? row.source.source_reconciliation.model_declared_source_page ?? 'Not recorded'} · Reconciled pages {(row.source.source_reconciliation.reconciled_physical_pages || []).join(', ') || 'Unresolved'}</p>}
+      {row.linked_locations?.map(location=><div className="review-linked-location" key={location.target_id}><h4>Work location used for environmental lookup</h4><p><strong>{label(location.source.location_name)}</strong> · {location.source.latitude}, {location.source.longitude} · {label(location.source.coordinate_system)}</p><small>{location.source.source_verified ? 'Location source verified.' : 'Location source needs verification.'} Reviewed together with this condition; no separate duplicate review item is created.</small></div>)}
     </section>
     <section aria-label="AI / extracted interpretation"><h3>AI interpretation</h3><p>Check this against the permit wording.</p><Interpretation record={raw}/></section></div>
     {(row.effective || row.state==='REJECTED') && <details className="review-previous"><summary>Previously saved interpretation</summary><section aria-label="Effective reviewed interpretation">{row.effective ? <><div className="review-preview"><Preview record={row.effective}/></div><Interpretation record={row.effective} changes={row.review?.corrections || {}} original={raw}/></> : <p>Interpretation rejected. Resolution is required; the source condition remains auditable.</p>}</section></details>}
@@ -64,27 +65,20 @@ function Workspace({row,analysis,session,identity,draft,onDraft,onSaved}){
 function LegacyHumanReview({analysis,session,initialTargetId=null,onUpdated,onLoaded}){
   const [data,setData]=useState(null),[error,setError]=useState(''),[selected,setSelected]=useState(null),[drafts,setDrafts]=useState({}),[saved,setSaved]=useState('');
   const detailRef=useRef(null);
-  const [bulkConfirm,setBulkConfirm]=useState(null),[bulkBusy,setBulkBusy]=useState(false),[bulkReviewer,setBulkReviewer]=useState('Local reviewer'),[bulkResult,setBulkResult]=useState(null);
-  useEffect(()=>{setBulkConfirm(null);setBulkResult(null);},[analysis?.analysis_id,session?.boot_id]);
-  useEffect(()=>{let active=true;setData(null);setError('');setDrafts({});setSelected(null);setSaved('');if(analysis && session)fetch(`/api/reviews?analysis_id=${encodeURIComponent(analysis.analysis_id)}`,{headers:{'X-Session-Id':session.boot_id}}).then(async r=>{const result=await r.json();if(!r.ok)throw new Error(result.error || 'Reviews unavailable');if(result.analysis_run_id!==analysis.analysis_id)throw new Error('REVIEW_IDENTITY_MISMATCH');if(active){setData(result);onLoaded?.(result);}}).catch(e=>{if(active)setError(e.message);});return ()=>{active=false;};},[analysis?.analysis_id,session?.boot_id]);
+  const [multiSelect,setMultiSelect]=useState(false),[selectedIds,setSelectedIds]=useState([]);
+  useEffect(()=>{let active=true;setData(null);setError('');setDrafts({});setSelected(null);setSaved('');setMultiSelect(false);setSelectedIds([]);if(analysis && session)fetch(`/api/reviews?analysis_id=${encodeURIComponent(analysis.analysis_id)}`,{headers:{'X-Session-Id':session.boot_id}}).then(async r=>{const result=await r.json();if(!r.ok)throw new Error(result.error || 'Reviews unavailable');if(result.analysis_run_id!==analysis.analysis_id)throw new Error('REVIEW_IDENTITY_MISMATCH');if(active){setData(result);onLoaded?.(result);}}).catch(e=>{if(active)setError(e.message);});return ()=>{active=false;};},[analysis?.analysis_id,session?.boot_id]);
   if(!analysis)return <div className="empty-state">Select an analysis to review its interpretation.</div>;
-  const rows=data?.requirements || [],s=reviewSummary(rows);
-  const eligible=rows.filter(r=>r.bulk_eligible===true);
-  async function approveAll(){
-    if(bulkBusy || !bulkConfirm)return;
-    setBulkBusy(true);setError('');setSaved('');
-    try{
-      const response=await fetch('/api/reviews/bulk-approve',{method:'PUT',headers:{'Content-Type':'application/json','X-Session-Id':session.boot_id},body:JSON.stringify({analysis_run_id:data.analysis_run_id,document_sha256:data.document_sha256,reviewer:bulkReviewer,targets:bulkConfirm})});
-      const result=await response.json();if(!response.ok)throw new Error(result.error || 'Bulk approval could not be saved.');
-      setData(result);onUpdated?.(result);setBulkResult(result);setBulkConfirm(null);setSaved(`${result.approved_count} interpretations approved. ${result.skipped_count} skipped; ${result.failed_count} failed.`);
-    }catch(e){setError(e.message);setBulkConfirm(null);}finally{setBulkBusy(false);}
-  }
+  const rows=data?.requirements || [];
   const chosen=rows.find(row=>row.target_id===(selected || initialTargetId)) || rows.find(row=>!reviewResolved(row)) || rows[0];
   const selectTarget=targetId=>{
     if(targetId===chosen?.target_id)return;
     if(unsavedDraft(chosen,drafts[chosen.target_id]) && !window.confirm('Discard unsaved changes?'))return;
     setSelected(targetId);setSaved('');
   };
+  const selectedRows=rows.filter(row=>selectedIds.includes(row.target_id));
+  const toggleSelection=targetId=>setSelectedIds(previous=>previous.includes(targetId)?previous.filter(id=>id!==targetId):[...previous,targetId]);
+  const toggleMultiSelect=()=>{setMultiSelect(value=>!value);setSelectedIds([]);};
+  const selectAllVisible=visibleRows=>setSelectedIds(previous=>visibleRows.every(row=>previous.includes(row.target_id))?previous.filter(id=>!visibleRows.some(row=>row.target_id===id)):[...new Set([...previous,...visibleRows.map(row=>row.target_id)])]);
   const savedReview=(result,row)=>{
     setData(result);onUpdated?.(result);
     setDrafts(previous=>{const next={...previous};delete next[row.target_id];return next;});
@@ -97,17 +91,14 @@ function LegacyHumanReview({analysis,session,initialTargetId=null,onUpdated,onLo
     setSaved('Review saved.');
     if(next)window.requestAnimationFrame(()=>detailRef.current?.scrollIntoView?.({behavior:'smooth',block:'start'}));
   };
-const metrics=[['Total extracted',s.total],['Approved',s.approved],['Corrected',s.corrected],['Pending review',s.pending],['Rejected',s.rejected],['Applicable',s.applicable],['Not applicable',s.notApplicable],['Unassessed',s.unassessed],['Source / review gaps',s.gaps]];
   return <section className="human-review">
-    <details className="review-bulk-tools"><summary>Bulk actions</summary><HumanReviewBulkToolbar rows={rows} data={data} session={session} onRefresh={updated=>updated ? (setData(updated),onUpdated?.(updated)) : fetch(`/api/reviews?analysis_id=${encodeURIComponent(data.analysis_run_id)}`,{headers:{'X-Session-Id':session.boot_id}}).then(r=>r.json()).then(setData)} /></details>
-    {bulkConfirm && <div className="review-modal-backdrop"><div role="dialog" aria-modal="true" aria-labelledby="bulk-review-title" className="review-panel review-bulk-dialog" onKeyDown={e=>{if(e.key==='Escape' && !bulkBusy)setBulkConfirm(null);if(e.key==='Tab'){const controls=[...e.currentTarget.querySelectorAll('button:not(:disabled),input:not(:disabled)')];if(!controls.length)return;const first=controls[0],last=controls.at(-1);if(e.shiftKey && document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey && document.activeElement===last){e.preventDefault();first.focus();}}}}><h2 id="bulk-review-title">Approve all eligible pending interpretations?</h2><p>{Object.keys(bulkConfirm).length} eligible pending records selected across this analysis.</p><p>This records human acceptance of the current extracted interpretations. It does not establish regulatory approval, operational authorization, environmental evidence sufficiency, or safe-to-work status.</p><label>Reviewer<input autoFocus value={bulkReviewer} disabled={bulkBusy} onChange={e=>setBulkReviewer(e.target.value)}/></label><div className="review-actions"><button className="review-button" disabled={bulkBusy} onClick={()=>setBulkConfirm(null)}>Cancel</button><button className="review-button review-primary" disabled={bulkBusy || !bulkReviewer.trim()} onClick={approveAll}>{bulkBusy ? 'Saving approvals…' : 'Approve eligible pending'}</button></div></div></div>}
-    {error && <p role="alert" className="review-warning">{error}</p>}{saved && <p role="status" className="review-success">{saved}</p>}{bulkResult && <details className="review-bulk-results"><summary>Bulk approval results — skipped / failed records</summary>{bulkResult.results.filter(r=>r.status!=='APPROVED').map(r=><p key={r.target_id}><button className="review-button" onClick={()=>{selectTarget(r.target_id);}}>View {rows.find(row=>row.target_id===r.target_id)?.condition_id || r.target_id}</button> {label(r.status)} · {label(r.reason)}</p>)}</details>}{!data && !error && <p>Loading reviews…</p>}
+    {error && <p role="alert" className="review-warning">{error}</p>}{saved && <p role="status" className="review-success">{saved}</p>}{!data && !error && <p>Loading reviews…</p>}
     <div className="review-focus-layout">
-      <HumanReviewQueue rows={rows} selectedId={chosen?.target_id} onSelect={selectTarget}/>
+      <HumanReviewQueue rows={rows} selectedId={chosen?.target_id} onSelect={selectTarget} multiSelect={multiSelect} selectedIds={selectedIds} onMultiSelectToggle={toggleMultiSelect} onToggleSelection={toggleSelection} onSelectAll={visible=>selectAllVisible(visible)}/>
       <div className="review-focus-detail" ref={detailRef}>
-        {chosen ? <Workspace key={chosen.target_id} row={chosen} analysis={analysis} session={session} identity={{analysis_run_id:data.analysis_run_id,document_sha256:data.document_sha256}} draft={drafts[chosen.target_id]} onDraft={draft=>setDrafts(previous=>({...previous,[chosen.target_id]:draft}))} onSaved={result=>savedReview(result,chosen)}/> : <div className="review-panel review-focus-empty">Select a review item to begin.</div>}
+        {multiSelect && selectedRows.length ? <HumanReviewBulkToolbar rows={selectedRows} data={data} session={session} onRefresh={updated=>{setData(updated);onUpdated?.(updated);}}/> : chosen ? <Workspace key={chosen.target_id} row={chosen} analysis={analysis} session={session} identity={{analysis_run_id:data.analysis_run_id,document_sha256:data.document_sha256}} draft={drafts[chosen.target_id]} onDraft={draft=>setDrafts(previous=>({...previous,[chosen.target_id]:draft}))} onSaved={result=>savedReview(result,chosen)}/> : <div className="review-panel review-focus-empty">{multiSelect ? 'Select items in the list to choose a bulk action.' : 'Select a review item to begin.'}</div>}
       </div>
     </div>
-    <footer className="review-panel review-readiness"><h2><ShieldCheck size={19}/>Review readiness</h2><span className={`review-badge ${s.complete ? 'review-approved' : 'review-unreviewed'}`}>{s.complete ? 'REVIEW COMPLETE' : 'REVIEW INCOMPLETE'}</span><p>{s.resolved} of {s.total} review items resolved · {s.total-s.resolved} remaining.</p><p>{s.complete ? 'The interpretation review set is resolved.' : 'Some extracted requirements still require human review or interpretation resolution.'}</p><dl>{metrics.slice(1,6).map(([name,value])=><div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl><p>Human review is interpretation acceptance only. No regulatory approval or operational authorization is issued.</p></footer>
+
   </section>;
 }

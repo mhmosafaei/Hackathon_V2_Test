@@ -331,6 +331,46 @@ def reconcile_source_attribution(record, page_map):
     return record
 
 
+def reconcile_page_edge_noise(record, pages):
+    """Remove observed page furniture only at quote edges, then require a unique exact match."""
+    spans = record.get('source_spans') or []
+    if len(spans) != 1 or record.get('source_reconciliation', {}).get('status') != 'UNRESOLVED_NO_UNIQUE_MATCH':
+        return
+    edges = {}
+    page_numbers = set()
+    for page in pages:
+        lines = [normalise(line) for line in (page.text or '').splitlines() if normalise(line)]
+        for line in set(lines[:2] + lines[-2:]):
+            edges.setdefault(line, set()).add(page.page_number)
+            if re.fullmatch(r'Page\s+\d+(?:\s+of\s+\d+)?', line, re.I):
+                page_numbers.add(line)
+    furniture = page_numbers | {line for line, found in edges.items() if len(found) > 1
+        and not re.search(r'\b(?:shall|must|stop|threshold|condition|requirement)\b', line, re.I)}
+    lines = [line.strip() for line in spans[0].get('quotation', '').splitlines() if normalise(line)]
+    before = list(lines)
+    while lines and normalise(lines[0]) in furniture:
+        lines.pop(0)
+    while lines and normalise(lines[-1]) in furniture:
+        lines.pop()
+    if not lines or lines == before:
+        return
+    quote = ' '.join(lines)
+    matches = [page.page_number for page in pages if normalise(quote) in normalise(page.text)]
+    if len(matches) != 1:
+        return
+    page = matches[0]
+    record['original_source_spans'] = [dict(span) for span in spans]
+    record['verified_source_spans'] = [{'page': page, 'quotation': quote}]
+    record['model_declared_source_page'] = record.get('model_declared_source_page', record.get('source_page', spans[0]['page']))
+    record['source_page'] = page
+    record['reconciled_source_page'] = page
+    record['source_reconciliation'] = {
+        'status': 'UNIQUE_EXACT_MATCH_WITH_PAGE_EDGE_NOISE',
+        'model_declared_source_page': record['model_declared_source_page'],
+        'reconciled_physical_pages': [page],
+    }
+
+
 def reconcile_cross_page_quote(record, pages):
     """Split one unique contiguous quotation across physical page boundaries.
 
@@ -393,6 +433,7 @@ def reconcile_payload_source_attribution(payload, pages):
         reconcile_source_attribution(geofence, page_map)
     for requirement in payload.get('environmental_requirements', []):
         reconcile_source_attribution(requirement, page_map)
+        reconcile_page_edge_noise(requirement, pages)
         reconcile_cross_page_quote(requirement, pages)
     return payload
 

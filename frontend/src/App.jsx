@@ -65,7 +65,7 @@ const workflowSteps = [
 ];
 const workflowCopy = {
   permit: ['Understand the permit', 'Upload a permit and inspect the extracted conditions, limits and source text.', 'Analyze the PDF, then continue to Human Review.'],
-  review: ['Check the interpretation', '', 'Please resolve every AI-extracted item to unlock Environmental Intelligence and downstream decision assessment. You can return and edit later.'],
+  review: ['Human Review: Check the interpretation', '', 'Please resolve every AI-extracted item to unlock Environmental Intelligence and downstream decision assessment.'],
   environment: ['Gather environmental evidence', 'See which permit conditions need environmental data, then request evidence for a confirmed point and UTC period.', 'Fetch data, or explicitly continue with an evidence gap if retrieval is unavailable.'],
   decision: ['Assess work windows', 'Compare reviewed conditions with the evidence currently available.', 'Choose the work-window criteria and evaluate. Return to earlier steps whenever needed.']
 };
@@ -88,45 +88,65 @@ function reviewBlockerHint(rows, remaining) {
   ].filter(Boolean);
   return details.length ? `${details.join(' · ')}. Applicable alone does not complete review.` : `${remaining} review item(s) remain; check conflicts and required notes.`;
 }
-function ReviewDashboard({progress, rows}) {
-  const total = progress?.total || 0;
-  const resolved = progress?.resolved || 0;
+export function ReviewProgress({progress, rows}) {
+  const summary = Array.isArray(rows) ? reviewSummary(rows) : null;
+  const total = summary?.total ?? progress?.total ?? 0;
+  const resolved = summary?.resolved ?? progress?.resolved ?? 0;
+  const remaining = Math.max(0, total - resolved);
+  const complete = summary?.complete ?? progress?.complete ?? false;
   const percentage = total ? Math.round(resolved / total * 100) : 0;
-  const summary = rows ? reviewSummary(rows) : null;
-  const applicabilityTotal = summary ? summary.applicable + summary.notApplicable + summary.unassessed : 0;
-  const locationItems = rows?.filter(row => row.kind === 'spatial_context').length || 0;
+  return (<div className="review-completion-block"><div className="review-completion-heading"><strong>Review progress</strong><b>{percentage}%</b></div>
+      <div className="review-completion-track" role="progressbar" aria-label={`Review completion: ${resolved} of ${total} items resolved, ${remaining} remaining`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentage}><span style={{width:`${percentage}%`}}/></div>
+      <div className="review-completion-caption"><span>{resolved} of {total} resolved · {remaining} remaining</span><strong className={complete ? 'readiness-complete' : 'readiness-incomplete'}>{complete ? 'REVIEW COMPLETE' : 'REVIEW INCOMPLETE'}</strong></div>
+    </div>);
+}
+export function ReviewDashboard({progress, rows}) {
+  const summary = Array.isArray(rows) ? reviewSummary(rows) : null;
   const counts = [summary?.applicable || 0, summary?.notApplicable || 0, summary?.unassessed || 0];
-  const markerDegrees = 6;
-  const emptyCategories = counts.filter(count => count === 0).length;
-  const angles = applicabilityTotal
-    ? counts.map(count => count ? count / applicabilityTotal * (360 - emptyCategories * markerDegrees) : markerDegrees)
-    : [markerDegrees, markerDegrees, 360 - 2 * markerDegrees];
-  const applicableEnd = angles[0];
-  const notApplicableEnd = angles[0] + angles[1];
+  const countTotal = counts.reduce((sum, count) => sum + count, 0);
+  const applicableEnd = countTotal ? counts[0] / countTotal * 360 : 0;
+  const notApplicableEnd = countTotal ? (counts[0] + counts[1]) / countTotal * 360 : 0;
   return <div className="workflow-review-dashboard" aria-label="Human Review dashboard">
-    <div className="workflow-review-gauge" role="img" aria-label={`Condition applicability: ${summary?.applicable ?? 0} applicable, ${summary?.notApplicable ?? 0} not applicable, ${summary?.unassessed ?? 0} unassessed. Zero-count categories appear as small markers.`} style={{'--applicable-end':`${applicableEnd}deg`,'--not-applicable-end':`${notApplicableEnd}deg`}}><span>{applicabilityTotal}<small>conditions</small></span></div>
-    <div className="workflow-review-stats"><strong>{resolved} / {total} review items · {percentage}%</strong><span>{progress?.remaining ?? Math.max(0,total-resolved)} remaining{locationItems ? ` · ${locationItems} location ${locationItems === 1 ? 'item' : 'items'} reviewed separately` : ''}</span><div className="workflow-applicability"><span><i className="workflow-applicable-dot"/>Applicable <b>{summary?.applicable ?? '—'}</b></span><span><i className="workflow-not-applicable-dot"/>Not applicable <b>{summary?.notApplicable ?? '—'}</b></span><span><i className="workflow-unassessed-dot"/>Unassessed <b>{summary?.unassessed ?? '—'}</b></span></div>{progress?.remaining > 0 && rows?.length > 0 && <small className="workflow-review-blockers">{reviewBlockerHint(rows, progress.remaining)}</small>}</div>
+    <div className="review-applicability-block"><div className="workflow-review-gauge review-applicability-gauge" role="img" aria-label={`Applicability: ${counts[0]} applicable, ${counts[1]} not applicable, ${counts[2]} unassessed`} style={{'--applicable-end':`${applicableEnd}deg`,'--not-applicable-end':`${notApplicableEnd}deg`}}><span>{countTotal}<small>items</small></span></div>
+      <div className="review-applicability-legend"><strong>Applicability</strong>{[['Applicable',counts[0],'#10a878'],['Not Applicable',counts[1],'#e45868'],['Unassessed',counts[2],'#a8bacb']].map(([label,count,color])=><div key={label}><i style={{background:color}}/><span>{label}</span><b>{count}</b></div>)}</div>
+    </div>
   </div>;
 }
 function WorkflowGuide({tab, access, reviewProgress, reviewRows, environmentHandled, onStep, onContinueWithoutEvidence, compact=false}) {
+  const guideRef = useRef(null);
+  useEffect(() => {
+    if (tab !== 'review' || compact) return;
+    const update = () => {
+      const guide = guideRef.current;
+      if (guide) guide.style.setProperty('--review-guide-top', `${guide.getBoundingClientRect().top + window.scrollY}px`);
+    };
+    update();
+    window.addEventListener('resize', update);
+    const header = document.querySelector('.header');
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    if (header) observer?.observe(header);
+    return () => {window.removeEventListener('resize', update); observer?.disconnect();};
+  }, [tab, compact]);
   const index = workflowSteps.findIndex(([id]) => id === tab);
   const previous = workflowSteps[index - 1], next = workflowSteps[index + 1];
   const [title, description, task] = workflowCopy[tab];
   const nextReason = tab === 'permit' ? 'Analyze a permit to continue.' : tab === 'review'
     ? reviewProgress ? reviewBlockerHint(reviewRows, reviewProgress.remaining) : 'Loading review status…' : 'Fetch evidence or acknowledge the gap to continue.';
-  return <section className={`workflow-guide ${compact ? 'workflow-guide-compact' : ''} ${tab === 'review' && !compact ? 'workflow-guide-review' : ''}`} aria-label={`Step ${index + 1} ${compact ? 'navigation' : 'guidance'}`}>
+  const stepActions = <div className="workflow-guide-actions">
+    {previous && <button type="button" className="button secondary" onClick={() => onStep(previous[0])}>{tab === 'review' && !compact ? 'Back: Permit Intelligence' : 'Back'}</button>}
+    {tab === 'environment' && !environmentHandled && <button type="button" className="button secondary" onClick={onContinueWithoutEvidence}>Continue with evidence gap</button>}
+    {next && <button type="button" className="button primary" disabled={!access[next[0]]} title={!access[next[0]] ? nextReason : undefined} onClick={() => onStep(next[0])}>Next: {next[2]}</button>}
+    {next && !access[next[0]] && tab !== 'review' && <small>{nextReason}</small>}
+  </div>;
+  return <section ref={guideRef} className={`workflow-guide ${compact ? 'workflow-guide-compact' : ''} ${tab === 'review' && !compact ? 'workflow-guide-review' : ''}`} aria-label={`Step ${index + 1} ${compact ? 'navigation' : 'guidance'}`}>
     <div className="workflow-guide-intro"><span className="workflow-guide-label">STEP {index + 1} OF 4</span>
-      {!compact && <><h2>{title}</h2>{description && <p>{description}</p>}<p className="workflow-guide-task">{tab !== 'review' && <strong>What to do:</strong>} {task}</p>
+      {!compact && <>{tab === 'review' ? <div className="workflow-guide-heading-row"><h2>{title}</h2>{stepActions}</div> : <h2>{title}</h2>}{description && <p>{description}</p>}{tab !== 'review' && <p className="workflow-guide-task"><strong>What to do:</strong> {task}</p>}
         {tab === 'environment' && environmentHandled && <p className="workflow-guide-progress">Environmental evidence step handled. You can continue to the decision.</p>}</>}
     </div>
     {tab === 'review' && !compact && reviewProgress && <ReviewDashboard progress={reviewProgress} rows={reviewRows}/>}
-    <div className="workflow-guide-actions">
-      {previous && <button type="button" className="button secondary" onClick={() => onStep(previous[0])}>{tab === 'review' && !compact ? 'Back: Permit Intelligence' : 'Back'}</button>}
-      {tab === 'environment' && !environmentHandled && <button type="button" className="button secondary" onClick={onContinueWithoutEvidence}>Continue with evidence gap</button>}
-      {next && <button type="button" className="button primary" disabled={!access[next[0]]} title={!access[next[0]] ? nextReason : undefined} onClick={() => onStep(next[0])}>Next: {next[2]}</button>}
-      {next && !access[next[0]] && <small>{nextReason}</small>}
-    </div>
-    {tab === 'review' && !compact && Array.isArray(reviewRows) && <HumanReviewOverview summary={reviewSummary(reviewRows)}/>}
+    {tab === 'review' && !compact && <div className="workflow-review-instructions"><p className="workflow-review-main-instruction">{task}</p><p className="workflow-review-start"><span aria-hidden="true">↓ ↓ ↓</span><b>START REVIEW — work through each item below</b><span aria-hidden="true">↓ ↓ ↓</span></p><p><strong>Approve:</strong> Is the AI’s interpretation of the permit text correct?</p><p><strong>Applicable:</strong> Does this permit condition apply to the work you plan to do?</p></div>}
+    {!(tab === 'review' && !compact) && stepActions}
+    {tab === 'review' && !compact && Array.isArray(reviewRows) && <div className="workflow-review-summary"><ReviewProgress progress={reviewProgress} rows={reviewRows}/><HumanReviewOverview summary={reviewSummary(reviewRows)}/></div>}
   </section>;
 }
 function limitTitle(label) {
@@ -148,7 +168,7 @@ export function EnvironmentalParameterIcon({label}) {
   const normalized = String(label || '').toLowerCase();
   const [, Icon] = parameterIconEntries.find(([term]) => normalized.includes(term)) || [];
   const Component = Icon || Gauge;
-  if (normalized.includes('dissolved oxygen') || normalized.includes('oxygen')) return <span className="limit-icon oxygen-icon" aria-hidden="true">O<sub>2</sub></span>;
+  if (normalized.includes('dissolved oxygen') || normalized.includes('oxygen')) return <span className="limit-icon oxygen-icon" aria-hidden="true">O₂</span>;
   return <span className="limit-icon" aria-hidden="true"><Component size={19}/></span>;
 }
 function ChartIcon({index, type}) {
@@ -169,15 +189,26 @@ function ScrollDownCue({active, analysisId}) {
   if (!visible) return null;
   return <button type="button" className="permit-scroll-cue" aria-label="Scroll down for more permit information" title="Scroll down" onClick={() => window.scrollBy({top:Math.max(320, Math.round(window.innerHeight * .75)), behavior:'smooth'})}><ChevronDown size={30}/></button>;
 }
+export function scrollToPermitSection(id) {
+  const target = document.getElementById(id);
+  if (!target) return;
+  const header = document.querySelector('.header');
+  const position = header ? window.getComputedStyle(header).position : '';
+  const headerHeight = header && ['sticky', 'fixed'].includes(position)
+    ? header.getBoundingClientRect().height : 0;
+  const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - headerHeight - 16);
+  window.scrollTo({top, behavior:'smooth'});
+}
 export function Results({analysis,reviewData,onReview,active=true}) {
   const data = chartData(analysis.conditions);
   const unverified = analysis.conditions.filter(c => !c.source_verified).length;
   const summary = analysis.summary;
   const progress = reviewData?.review_progress;
+
   return <>
-    <div className="permit-intro-screen"><section className="overview-hero permit-overview"><div className="page-heading"><div><div className="eyebrow">STEP 1 OF 4</div><h1>Permit Intelligence</h1><p>Review key permit details and limits here.</p><strong className="document-filename" title={analysis.filename}>{analysis.filename}</strong>{analysis.restoration_status === 'INCOMPLETE' && <p className="permit-extraction-warning" role="alert">Extraction incomplete — review the returned information and any missing fields.</p>}</div><div className="permit-hero-actions"><nav className="permit-quick-nav" aria-label="Permit section shortcuts">
-      <button type="button" className="button secondary" onClick={()=>document.getElementById('key-permit-limits')?.scrollIntoView({behavior:'smooth',block:'start'})}>Key Permit Limits</button><button type="button" className="button secondary" onClick={()=>document.getElementById('condition-overview')?.scrollIntoView({behavior:'smooth',block:'start'})}>Condition Overview</button>
-      </nav><div className="permit-review-action" role="status"><span>{progress ? `Human Review: ${progress.resolved} of ${progress.total} complete` : 'Human Review: loading status'}</span><button type="button" className="button primary" onClick={()=>onReview?.()}>Next: Human Review <ArrowUpRight size={16}/></button></div></div></div></section>
+    <div className="permit-intro-screen"><section className="overview-hero permit-overview"><div className="page-heading"><div><div className="eyebrow">STEP 1 OF 4</div><h1>Permit Intelligence: <span>Review key permit details and limits here</span></h1><strong className="document-filename" title={analysis.filename}>{analysis.filename}</strong>{analysis.restoration_status === 'INCOMPLETE' && <p className="permit-extraction-warning" role="alert">Extraction incomplete — review the returned information and any missing fields.</p>}</div><div className="permit-hero-actions"><nav className="permit-quick-nav" aria-label="Permit section shortcuts">
+      <button type="button" className="button secondary" onClick={()=>scrollToPermitSection('key-permit-limits')}>Key Permit Limits</button><button type="button" className="button secondary" onClick={()=>scrollToPermitSection('condition-overview')}>Condition Overview</button>
+      </nav><div className="permit-review-action" role="status"><button type="button" className="button primary" onClick={()=>onReview?.()}>Next: Human Review <ArrowUpRight size={16}/></button></div></div></div></section>
     {analysis.mode === 'MOCK' && <div className="notice">Synthetic demonstration · These are mocked records, not extracted Kilkeel evidence.</div>}
     <section className="card permit-basic-information"><div className="section-heading"><h2><Info size={19}/> Basic Information</h2></div><div className="summary-grid permit-summary-grid">{[['Permit number', summary.permit_number], ['Validity', `${fallback(summary.valid_from)} — ${fallback(summary.valid_until)}`], ['Activity', summary.activity], ['Licensee', summary.licensee], ['Issuing authority', summary.authority], ['Total conditions', analysis.conditions.length]].map(([label, value]) => <section className="card metric" key={label}><div className="eyebrow">{label}</div><strong>{fallback(value)}</strong></section>)}</div></section>
     <GeofenceCard geofences={analysis.geofences}/></div>

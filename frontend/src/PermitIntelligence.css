@@ -1,0 +1,121 @@
+/* Permit Intelligence overrides the older global card and chart rules. */
+.permit-hero-actions {display:flex;flex-direction:column;align-items:flex-start;gap:22px;min-width:0;padding:6px 16px 0 0;}
+.permit-quick-nav {display:flex;flex-wrap:wrap;gap:12px;}
+.permit-review-action {display:flex;align-items:center;margin-top:10px;}
+.permit-overview .page-heading {align-items:flex-start;}
+.limits .limit-copy strong {font-size:13px;font-weight:700;line-height:1.35;color:#173544;}
+.limits .limit-copy b {font-size:13px;font-weight:600;line-height:1.5;margin-top:7px;color:#496578;}
+.limits .limit-copy .limit-title-stop {display:inline;font-size:11px;font-weight:500;color:#647e8b;}
+.limits .limit .limit-icon, .limits .limit-stop .limit-icon {color:#147e8a;background:#e9f5f5;}
+.limits .limit .oxygen-icon {white-space:nowrap;font-size:21px;line-height:1;letter-spacing:0;}
+.permit-basic-information h2, .limits h2, .permit-chart-section h2 {color:#173544;}
+.permit-basic-information {
+  margin-top: 12px;
+  margin-bottom: 24px;
+}
+
+.permit-basic-information > .section-heading svg,
+.limits > .section-heading svg,
+.permit-chart-section > .section-heading svg {
+  color: #147e8a;
+}
+
+.permit-basic-information .permit-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 20px 24px 24px;
+}
+
+.permit-basic-information .metric {
+  min-width: 0;
+  padding: 15px 17px;
+  background: #f8fbfe;
+}
+
+.permit-basic-information .metric .eyebrow {
+  font-size: 11px;
+}
+
+.permit-basic-information .metric strong {
+  font-size: 13px;
+}
+
+.limits {
+  margin-bottom: 24px;
+}
+
+.limits .limits-grid {
+  gap: 16px;
+  padding: 22px 24px 24px;
+}
+
+.limits .limit {
+  gap: 15px;
+  padding: 16px;
+  border-color: #d8e7f1;
+  background: #f8fbfe;
+}
+
+.limits .limit .limit-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  margin: 0;
+  border-radius: 10px;
+  background: #e9f5f5;
+  color: #147e8a;
+}
+
+.limits .limit .limit-icon svg {
+  display: block;
+  margin: 0;
+}
+
+.limits .limit-stop,
+.limits .limit-stop .limit-icon {
+  border-color: #d8e7f1;
+}
+
+.limits .limit-stop .limit-icon {
+  background: #e9f5f5;
+  color: #147e8a;
+}
+
+
+.permit-chart-section {
+  margin-top: 24px;
+}
+
+.permit-chart-section .chart-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 22px 24px 24px;
+}
+
+.permit-chart-section .chart-card {
+  min-width: 0;
+}
+
+@media (max-width: 850px) {
+  .permit-chart-section .chart-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .permit-basic-information .permit-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .limits .limits-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.permit-basic-information .metric .eyebrow {color:#365769;}
+
+.permit-overview .document-filename {font-weight:400;}

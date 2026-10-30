@@ -92,6 +92,27 @@ def targets(original):
             for kind, array in ARRAYS.items() for index, record in enumerate(original.get(array, []))}
 
 
+def linked_spatial_contexts(original):
+    """Link a structured point to the condition whose source quote contains its quote."""
+    links = {}
+    conditions = original.get('conditions', [])
+    for spatial_index, location in enumerate(original.get('spatial_context', [])):
+        location_spans = location.get('source_spans') or []
+        if not location_spans:
+            continue
+        for condition_index, condition in enumerate(conditions):
+            condition_spans = condition.get('source_spans') or []
+            matched = any(
+                point.get('page') == source.get('page')
+                and ' '.join(str(point.get('quotation') or '').lower().split())
+                in ' '.join(str(source.get('quotation') or '').lower().split())
+                for point in location_spans for source in condition_spans)
+            if matched:
+                links.setdefault(condition_index, []).append(spatial_index)
+                break
+    return links
+
+
 def read_store(path):
     if not path.exists():
         return {'schema_version': 'permitpulse.review-store.v1', 'overlays': {}, 'history': []}
@@ -122,8 +143,33 @@ def list_reviews(root, analysis):
     original, path = context(root, analysis)
     store = read_store(path)
     rows = []
+    spatial_links = linked_spatial_contexts(original)
+    linked_spatial_indexes = {index for indexes in spatial_links.values() for index in indexes}
     for target_id, (kind, index, raw) in targets(original).items():
+        if kind == 'spatial_context' and index in linked_spatial_indexes:
+            continue
         overlay = store['overlays'].get(target_id)
+        # Carry forward a valid review from the former duplicate location row
+        # when no review has yet been saved against its linked condition.
+        if not overlay and kind == 'condition':
+            for spatial_index in spatial_links.get(index, []):
+                spatial = original['spatial_context'][spatial_index]
+                spatial_id = f"spatial_context-{spatial_index}-{fingerprint(spatial)[:16]}"
+                prior = store['overlays'].get(spatial_id)
+                if not prior or analysis.get('spatial_context', [])[spatial_index].get('source_verified') is not True:
+                    continue
+                try:
+                    expected = {'original_fingerprint', 'state', 'applicability', 'corrections', 'reviewer', 'note'}
+                    if (prior.get('original_fingerprint') != fingerprint(spatial)
+                            or prior.get('analysis_run_id') != analysis['analysis_id']
+                            or prior.get('document_sha256') != analysis['document_sha256']
+                            or prior.get('target') != {'kind': 'spatial_context', 'id': spatial_id}):
+                        continue
+                    validate_review({key: prior[key] for key in expected}, 'spatial_context', spatial)
+                    overlay = {**prior, 'original_fingerprint': fingerprint(raw), 'target': {'kind': kind, 'id': target_id}}
+                    break
+                except (ValueError, KeyError, AttributeError):
+                    continue
         conflict = None
         if overlay:
             try:
@@ -137,21 +183,38 @@ def list_reviews(root, analysis):
         current = analysis.get(ARRAYS[kind], [])
         source = current[index] if index < len(current) else raw
         mapping = [r for r in analysis.get('environmental_mapping', []) if str(r.get('condition_id')) == str(raw.get('condition_id'))] if kind == 'environmental_requirement' else []
-        rows.append({'target_id': target_id, 'kind': kind, 'condition_id': raw.get('condition_id', raw.get('number', raw.get('name', raw.get('location_name')))),
+        row = {'target_id': target_id, 'kind': kind, 'condition_id': raw.get('condition_id', raw.get('number', raw.get('name', raw.get('location_name')))),
                      'original_fingerprint': fingerprint(raw), 'original': raw, 'source': source, 'mapping': mapping,
                      'review': overlay if not conflict else None, 'state': state, 'conflict': conflict,
                      'applicability': overlay['applicability'] if overlay and not conflict else 'UNASSESSED',
                      'effective': effective, 'decision_relevant_default': relevance(raw, kind),
-                     'correction_fields': sorted(FIELDS[kind])})
+                     'correction_fields': sorted(FIELDS[kind])}
+        if kind == 'condition' and index in spatial_links:
+            row['linked_locations'] = []
+            for spatial_index in spatial_links[index]:
+                spatial = original['spatial_context'][spatial_index]
+                spatial_id = f"spatial_context-{spatial_index}-{fingerprint(spatial)[:16]}"
+                row['linked_locations'].append({'target_id': spatial_id, 'original': deepcopy(spatial),
+                    'source': deepcopy(analysis.get('spatial_context', [])[spatial_index]),
+                    'original_fingerprint': fingerprint(spatial)})
+        rows.append(row)
     if set(store['overlays']) - set(targets(original)):
         raise ValueError('REVIEW_TARGET_CONFLICT')
     for row in rows:
         row['bulk_blocker'] = bulk_blocker(row)
         row['bulk_eligible'] = row['bulk_blocker'] is None
     decision_context = {key: deepcopy(analysis.get(key)) for key in ('temporal_context','spatial_context','geofences')}
+    approved_locations = {location['target_id'] for row in rows
+        if row['kind'] == 'condition' and row['state'] in {'APPROVED','CORRECTED'}
+        and row['applicability'] == 'APPLICABLE' and not row['conflict']
+        for location in row.get('linked_locations', [])}
     for row in rows:
         if row['kind'] == 'spatial_context' and row['state'] == 'APPROVED' and row['applicability'] == 'APPLICABLE' and row['source'].get('source_verified') is True:
             decision_context['spatial_context'][targets(original)[row['target_id']][1]]['point_verified'] = True
+        for location in row.get('linked_locations', []):
+            kind, index, _ = targets(original)[location['target_id']]
+            if location['target_id'] in approved_locations and location['source'].get('source_verified') is True:
+                decision_context['spatial_context'][index]['point_verified'] = True
     return {'analysis_run_id': analysis['analysis_id'], 'document_sha256': analysis['document_sha256'], 'requirements': rows,
             'review_progress': review_progress(rows), 'decision_context': decision_context}
 
@@ -181,6 +244,12 @@ def approved_spatial_points(review_data):
     """Return only explicitly approved, source-backed point coordinates."""
     points = set()
     for row in review_data.get('requirements', []):
+        linked = row.get('linked_locations', []) if row.get('kind') == 'condition' and row.get('state') in {'APPROVED','CORRECTED'} and row.get('applicability') == 'APPLICABLE' else []
+        for location in linked:
+            source = location.get('source', {})
+            lat, lon = source.get('latitude'), source.get('longitude')
+            if source.get('source_verified') is True and source.get('geometry_type') == 'point' and isinstance(lat, (int,float)) and isinstance(lon, (int,float)) and -90 <= lat <= 90 and -180 <= lon <= 180:
+                points.add((lat, lon))
         source = row.get('source', {})
         if (row.get('kind') == 'spatial_context' and row.get('state') == 'APPROVED'
                 and row.get('applicability') == 'APPLICABLE'
