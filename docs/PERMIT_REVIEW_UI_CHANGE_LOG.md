@@ -197,3 +197,21 @@ Verification: Spatial review tests (9/9) and focused frontend tests (21/21) pass
 
 - Kept applicability in the left panel and moved review progress above the three status cards in a single right panel.
 - Aligned both panels and moved Back/Next into a separate row below the full-width title.
+
+
+## 2026-10-30 — Guided environmental evidence workflow
+
+- Confirm Location & Time now appears first. A unique reviewed, source-verified point and bounded explicit UTC dates are pre-filled; multiple locations and ambiguous/long validity periods require confirmation.
+- Confirmation reveals the combined environmental requirements, provider and capability panel. Conditions, source notes, manual FNU inputs and unit details remain available by expansion.
+- An explicit Check Connections action probes Open-Meteo metadata and validates configured Copernicus credentials in a bounded subprocess. It does not create environmental evidence or write credentials.
+- Fetch is revealed after checking connections. Unavailable sources require acknowledgement as evidence gaps before continuing.
+- Editing query inputs invalidates the local confirmation/check and clears displayed results. Existing saved results remain inspectable until edited.
+- Removed repeated environmental page headings, document summary and redundant introductory notices; retained mock-mode identification.
+
+
+## 2026-10-30 — Variable-first requirements panel
+
+- Required environmental variables are now individually visible as expandable rows, grouped beside their corresponding data source and connection status.
+- Each variable reveals its units, implementation capability and matching permit conditions, thresholds, source quotations and retrieval notes.
+- Removed the separate Required by Permit / Contract and Environmental Capability Coverage sections. Manual FNU inputs remain attached to the relevant turbidity condition.
+- Validation: 51 related frontend tests passed; production build passed.

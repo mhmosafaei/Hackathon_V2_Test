@@ -66,7 +66,7 @@ const workflowSteps = [
 const workflowCopy = {
   permit: ['Understand the permit', 'Upload a permit and inspect the extracted conditions, limits and source text.', 'Analyze the PDF, then continue to Human Review.'],
   review: ['Human Review: Check the interpretation', '', 'Please resolve every AI-extracted item to unlock Environmental Intelligence and downstream decision assessment.'],
-  environment: ['Gather environmental evidence', 'See which permit conditions need environmental data, then request evidence for a confirmed point and UTC period.', 'Fetch data, or explicitly continue with an evidence gap if retrieval is unavailable.'],
+  environment: ['Environmental Intelligence: extract and fetch environmental data', '', ''],
   decision: ['Assess work windows', 'Compare reviewed conditions with the evidence currently available.', 'Choose the work-window criteria and evaluate. Return to earlier steps whenever needed.']
 };
 function AppNav({tab, setTab, access, completed}) {
@@ -138,10 +138,10 @@ function WorkflowGuide({tab, access, reviewProgress, reviewRows, environmentHand
     {next && <button type="button" className="button primary" disabled={!access[next[0]]} title={!access[next[0]] ? nextReason : undefined} onClick={() => onStep(next[0])}>Next: {next[2]}</button>}
     {next && !access[next[0]] && tab !== 'review' && <small>{nextReason}</small>}
   </div>;
-  return <section ref={guideRef} className={`workflow-guide ${compact ? 'workflow-guide-compact' : ''} ${tab === 'review' && !compact ? 'workflow-guide-review' : ''}`} aria-label={`Step ${index + 1} ${compact ? 'navigation' : 'guidance'}`}>
+  return <section ref={guideRef} className={`workflow-guide ${compact ? 'workflow-guide-compact' : ''} ${tab === 'review' && !compact ? 'workflow-guide-review' : ''} ${tab === 'environment' && !compact ? 'workflow-guide-environment' : ''}`} aria-label={`Step ${index + 1} ${compact ? 'navigation' : 'guidance'}`}>
     <div className="workflow-guide-intro"><span className="workflow-guide-label">STEP {index + 1} OF 4</span>
-      {!compact && <>{tab === 'review' ? <div className="workflow-guide-heading-row"><h2>{title}</h2>{stepActions}</div> : <h2>{title}</h2>}{description && <p>{description}</p>}{tab !== 'review' && <p className="workflow-guide-task"><strong>What to do:</strong> {task}</p>}
-        {tab === 'environment' && environmentHandled && <p className="workflow-guide-progress">Environmental evidence step handled. You can continue to the decision.</p>}</>}
+      {!compact && <>{tab === 'review' ? <div className="workflow-guide-heading-row"><h2>{title}</h2>{stepActions}</div> : <h2>{title}</h2>}{description && <p>{description}</p>}{tab !== 'review' && task && <p className="workflow-guide-task"><strong>What to do:</strong> {task}</p>}
+</>}
     </div>
     {tab === 'review' && !compact && reviewProgress && <ReviewDashboard progress={reviewProgress} rows={reviewRows}/>}
     {tab === 'review' && !compact && <div className="workflow-review-instructions"><p className="workflow-review-main-instruction">{task}</p><p className="workflow-review-start"><span aria-hidden="true">↓ ↓ ↓</span><b>START REVIEW — work through each item below</b><span aria-hidden="true">↓ ↓ ↓</span></p><p><strong>Approve:</strong> Is the AI’s interpretation of the permit text correct?</p><p><strong>Applicable:</strong> Does this permit condition apply to the work you plan to do?</p></div>}

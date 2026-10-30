@@ -255,6 +255,29 @@ def create_app(root=ROOT, *, transport=None, dist=None, environmental_transports
         finally:
             app.state.busy = False
 
+    @app.post('/api/environmental/connections')
+    async def environmental_connections(inputs: EvaluationInput, request: Request):
+        origin = request.headers.get('origin')
+        if origin and origin != str(request.base_url).rstrip('/'):
+            return JSONResponse({'error':'Request origin rejected.'}, status_code=403)
+        if request.headers.get('x-session-id') != app.state.boot_id:
+            return JSONResponse({'error':'Application restarted. Refresh the session.'}, status_code=409)
+        analysis = app.state.analyses.get(inputs.analysis_id)
+        if not analysis:
+            return JSONResponse({'error':'No active analysis for this session.'}, status_code=404)
+        if inputs.latitude is None or inputs.start_time is None:
+            return JSONResponse({'error':'Confirm a location and UTC period first.'}, status_code=422)
+        if app.state.busy:
+            return JSONResponse({'error':'A request is already running.'}, status_code=409)
+        if transport:
+            return {'checks':{},'provider_status':{},'mock':True}
+        from src.environmental.connections import check_connections
+        app.state.busy = True
+        try:
+            return await asyncio.to_thread(check_connections, analysis, inputs)
+        finally:
+            app.state.busy = False
+
     @app.post('/api/analyze')
     async def run(request: Request):
         # Same-origin, no CORS; stale browser sessions cannot dispatch after restart.

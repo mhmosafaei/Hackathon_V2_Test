@@ -15,7 +15,7 @@ const gridPoint={...point,coordinate_system:'IGR',coordinates_original:'IGR 3128
 const requirement={condition_id:'1',requirement_text:'Synthetic wind requirement',canonical_variable:'wind_speed_10m',source_spans:[],
   routing:{preferred_provider:'ECMWF_FORECAST'},status:'INSUFFICIENT_DATA'};
 const base={analysis_id:'synthetic-context',filename:'fixture.pdf',summary:{},environmental_requirements:[requirement],environmental_mapping:[requirement]};
-function show(extra={}) { render(<Environmental analysis={{...base,...extra}} session={{boot_id:'test'}}/>); }
+function show(extra={}) { render(<Environmental analysis={{...base,...extra}} session={{boot_id:'test'}}/>); const source=screen.queryByText('View permit location and date details');if(source) fireEvent.click(source); }
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
 
 it('converts Irish Grid only on click then copies WGS84 without further requests',async()=>{
@@ -34,9 +34,9 @@ it('converts Irish Grid only on click then copies WGS84 without further requests
   expect(fetch.mock.calls[0][0]).toBe('/api/coordinates/convert');
 });
 
-it('uses an explicitly verified WGS84 point only after a click, without fetching', async()=>{
+it('automatically fills an explicitly verified WGS84 point without fetching', async()=>{
   const fetch=vi.fn();vi.stubGlobal('fetch',fetch);show({spatial_context:[point]});
-  expect(screen.getByLabelText('Latitude')).toHaveValue(null);
+  expect(screen.getByLabelText('Latitude')).toHaveValue(54.1);
   await userEvent.click(screen.getByRole('button',{name:'Use location ↓'}));
   expect(screen.getByLabelText('Latitude')).toHaveValue(54.1);expect(screen.getByLabelText('Longitude')).toHaveValue(-6.1);
   expect(fetch).not.toHaveBeenCalled();
@@ -108,14 +108,19 @@ it('labels source validity separately and never invents midnight for date-only i
   expect(screen.getByRole('button',{name:'Use dates ↓'})).toBeDisabled();expect(screen.getByLabelText('Planned start (UTC)')).toHaveValue('');
 });
 it('copies explicit UTC operation times without fetching and leaves Fetch behavior intact',async()=>{
-  const fetch=vi.fn(async()=>({ok:true,json:async()=>({requirements:[]})}));vi.stubGlobal('fetch',fetch);
+  const fetch=vi.fn(async url=>({ok:true,json:async()=>url.endsWith('/connections') ? {checks:{},mock:true} : {requirements:[]}}));vi.stubGlobal('fetch',fetch);
   show({temporal_context:{operation_start:'2026-11-02T12:00Z',operation_end:'2026-11-02T14:00Z',source_verified:true}});
   expect(screen.getByRole('heading',{name:'Planned / permitted operational period'})).toBeVisible();
   await userEvent.click(screen.getByRole('button',{name:'Use dates ↓'}));
   expect(screen.getByLabelText('Planned start (UTC)')).toHaveValue('2026-11-02T12:00');
   expect(fetch).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
-  expect(fetch).toHaveBeenCalledTimes(1);expect(JSON.parse(fetch.mock.calls[0][1].body).end_time).toBe('2026-11-02T14:00:00Z');
+  fireEvent.change(screen.getByLabelText('Latitude'),{target:{value:'54'}});
+  fireEvent.change(screen.getByLabelText('Longitude'),{target:{value:'-6'}});
+  await userEvent.click(screen.getByRole('checkbox',{name:/Evaluate this confirmed point/}));
+  await userEvent.click(screen.getByRole('button',{name:'Confirm Location & Time'}));
+  await userEvent.click(screen.getByRole('button',{name:'Check Connections'}));
+  await userEvent.click(await screen.findByRole('button',{name:'Fetch Environmental Data'}));
+  expect(fetch).toHaveBeenCalledTimes(2);expect(JSON.parse(fetch.mock.calls[1][1].body).end_time).toBe('2026-11-02T14:00:00Z');
 });
 it('requires selection among locations and never reduces a route to its midpoint',async()=>{
   show({spatial_context:[point,{...point,location_name:'Source route',geometry_type:'route',point_verified:false}]});
@@ -129,7 +134,7 @@ it('requires source verification before date copying and places cards immediatel
   show({temporal_context:{operation_start:'2026-11-02T12:00Z',operation_end:'2026-11-02T14:00Z',source_verified:false}});
   expect(screen.getByRole('button',{name:'Use dates ↓'})).toBeDisabled();
   const context=screen.getByRole('region',{name:'Permit-defined location and time'});
-  expect(context.nextElementSibling).toHaveClass('environment-controls');
+  expect(context.closest('.environment-controls')).not.toBeNull();
 });
 it('reuses existing summary validity and geofences when extended context was not extracted',()=>{
   show({summary:{valid_from:'1 April 2024',valid_until:'1 April 2027'},temporal_context:{permit_valid_from:null},

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import {describe, it, expect, vi, afterEach} from 'vitest';
 import Environmental, {blockerLabel, displayedPointLabel} from './Environmental.jsx';
 import App from './App.jsx';
+function openVariables() { document.querySelectorAll('details.requirement-variable').forEach(details=>{if(!details.open) fireEvent.click(details.querySelector('summary'));}); }
 
 vi.mock('recharts', async () => {
   const actual = await vi.importActual('recharts');
@@ -18,6 +19,29 @@ const doc = () => ({analysis_id:'fresh', filename:'synthetic-environment.pdf',mo
   summary:{permit_number:'TEST-ENV'},conditions:[],key_limits:[],geofences:[],
   environmental_requirements:[row],environmental_mapping:[row]});
 const session = {boot_id:'boot',mode:'MOCK',provider_status:{COPERNICUS_MARINE:'Credentials required',ECMWF_FORECAST:'Public endpoint configured · connection not tested'}};
+
+// Exercise the staged UI; the connection probe is separate from evidence transport assertions.
+async function confirmLocation() {
+  if (screen.queryByRole('region',{name:'Check data sources'})) return true;
+  for (const [label,value] of [['Latitude','54'],['Longitude','-6'],['Planned start (UTC)','2026-10-13T00:00'],['Planned end (UTC)','2026-10-14T00:00']]) {
+    const input=screen.getByLabelText(label);
+    if (!input.value) fireEvent.change(input,{target:{value}});
+  }
+  const point=screen.getByRole('checkbox',{name:/Evaluate this confirmed point/});
+  if (!point.checked) await userEvent.click(point);
+  await userEvent.click(screen.getByRole('button',{name:'Confirm Location & Time'}));
+  return !!screen.queryByRole('region',{name:'Check data sources'});
+}
+async function fetchThroughSteps() {
+  if (!screen.queryByRole('button',{name:'Fetch Environmental Data'})) {
+    if (!await confirmLocation()) return;
+    const evidenceFetch=globalThis.fetch;
+    globalThis.fetch=(url,options)=>url==='/api/environmental/connections' ? Promise.resolve({ok:true,json:async()=>({checks:{},provider_status:{},mock:true})}) : evidenceFetch(url,options);
+    await userEvent.click(screen.getByRole('button',{name:/^Check Connections/}));
+    await screen.findByRole('button',{name:'Fetch Environmental Data'});
+  }
+  await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+}
 
 it.each(['wind_direction_10m','mean_wave_direction','surface_current_direction','another_informational_variable'])('generic valid informational %s including zero',variable=>{
   const check={threshold:null,status:'INFORMATIONAL',evidence:{canonical_variable:variable,temporal_coverage_status:'COVERED',points:[{raw_value:0,status:'INFORMATIONAL',validation_notes:[]}]}};
@@ -56,7 +80,7 @@ it.each([['2026-10-15T00:00',true],['2026-10-16T00:00',true],['2026-10-16T00:01'
   render(<Environmental session={session} analysis={doc()}/>);
   fireEvent.change(screen.getByLabelText('Planned start (UTC)'),{target:{value:'2026-10-13T00:00'}});
   fireEvent.change(screen.getByLabelText('Planned end (UTC)'),{target:{value:end}});
-  await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+  await fetchThroughSteps();
   if(allowed){expect(fetch).toHaveBeenCalledTimes(1);expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({start_time:'2026-10-13T00:00:00Z',end_time:`${end}:00Z`});}
   else{expect(fetch).not.toHaveBeenCalled();expect(screen.getByRole('alert')).toHaveTextContent('72 hours');}
 });
@@ -152,12 +176,12 @@ it('serializes explicit zero depth as zero and blank depth as null',async()=>{
   const fetch=vi.fn().mockResolvedValue({ok:true,json:async()=>({requirements:[row]})});vi.stubGlobal('fetch',fetch);
   render(<Environmental session={session} analysis={doc()}/>);
   fireEvent.change(screen.getByLabelText('Depth (m, when applicable)'),{target:{value:'0'}});
-  fireEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+  await fetchThroughSteps();
   await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(1));
   expect(JSON.parse(fetch.mock.calls[0][1].body).depth).toBe(0);
   await waitFor(()=>expect(screen.getByRole('button',{name:'Fetch Environmental Data'})).not.toBeDisabled());
   fireEvent.change(screen.getByLabelText('Depth (m, when applicable)'),{target:{value:''}});
-  fireEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+  await fetchThroughSteps();
   await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(2));
   expect(JSON.parse(fetch.mock.calls[1][1].body).depth).toBeNull();
 });
@@ -187,17 +211,22 @@ describe('environmental evidence view', () => {
   it('renders multiple requirements, source pages and provider states without fetching', async () => {
     const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
     render(<Environmental session={session} analysis={{...doc(),environmental_requirements:[row,row],environmental_mapping:[row,{...row,condition_id:'5',canonical_variable:'ais_status',routing:{preferred_provider:'EXTERNAL'},status:'EXTERNAL_EVIDENCE_REQUIRED'}]}}/>);
+    await confirmLocation();
     expect(screen.getAllByTestId('environment-row')).toHaveLength(2);
     expect(screen.getByText(/Credentials required/)).toBeVisible();
+    expect(screen.getByText('REQUIRED · NOT CONFIGURED')).not.toBeVisible();
+    await confirmLocation();
+  openVariables();
     expect(screen.getByText('REQUIRED · NOT CONFIGURED')).toBeVisible();
     await userEvent.click(screen.getAllByText('Source and retrieval notes')[0]);
     expect(screen.getAllByText('Page 2: Original synthetic requirement.')[0]).toBeVisible();
     expect(fetch).not.toHaveBeenCalled();
   });
-  it('counts unique authoritative mapped conditions, not raw model rows', () => {
+  it('counts unique authoritative mapped conditions, not raw model rows', async () => {
     const duplicate = {...row, condition_id:'38', canonical_variable:'sea_surface_temperature'};
     render(<Environmental session={session} analysis={{...doc(), environmental_requirements:[row, row, duplicate], environmental_mapping:[duplicate, {...duplicate, operator:'>'}]}}/>);
-    expect(screen.getByText('Environmental Requirements').parentElement).toHaveTextContent('1');
+    await confirmLocation();
+    expect(screen.getByRole('region', {name:'Environmental requirements and providers'}).querySelector('.requirement-total')).toHaveTextContent('1requirements');
   });
   it('requires an explicit Fetch click and renders mocked evidence', async () => {
     const evidence={...row,status:'WITHIN_THRESHOLD',evidence:{provider:'COPERNICUS_MARINE',dataset_name:'Synthetic fixture',dataset_id:'SYNTHETIC',
@@ -206,11 +235,11 @@ describe('environmental evidence view', () => {
     const fetch=vi.fn(async()=>({ok:true,json:async()=>({requirements:[evidence],provider_status:session.provider_status})}));vi.stubGlobal('fetch',fetch);
     render(<Environmental session={session} analysis={doc()}/>);
     expect(fetch).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+    await fetchThroughSteps();
     await screen.findByTestId('evidence-card');
     expect(fetch).toHaveBeenCalledTimes(1);
     const body=JSON.parse(fetch.mock.calls[0][1].body);
-    expect(body.analysis_id).toBe('fresh');expect(body.start_time).toBeNull();expect(body.latitude).toBeNull();
+    expect(body.analysis_id).toBe('fresh');expect(body.start_time).toBe('2026-10-13T00:00:00Z');expect(body.latitude).toBe(54);
     expect(screen.getByText('Retrieved point / representative model value (not a compliance conclusion)')).toBeVisible();
     expect(screen.getByText('1.2 m', {selector: 'strong'})).toBeVisible();
     expect(screen.queryByText('SAFE TO OPERATE')).not.toBeInTheDocument();
@@ -236,7 +265,7 @@ describe('environmental evidence view', () => {
     const points=Array.from({length:count},(_,i)=>({data_time:`2026-10-12T${String(Math.floor(i/4)%24).padStart(2,'0')}:${String(i%4*15).padStart(2,'0')}:00Z`,raw_value:0.1+i/1000,unit:'m/s',normalized_value:0.1+i/1000,normalized_unit:'m/s',status:'INSUFFICIENT_DATA'}));
     const fetch=vi.fn(async()=>({ok:true,json:async()=>({requirements:[{...row,evidence:{provider:'COPERNICUS_MARINE',dataset_id:'SYNTHETIC',points}}]})}));vi.stubGlobal('fetch',fetch);
     render(<Environmental session={session} analysis={doc()}/>);
-    await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+    await fetchThroughSteps();
     await userEvent.click(await screen.findByText(`All retrieved points · ${count}`));
     const records=screen.getAllByTestId('retrieved-point');expect(records).toHaveLength(count);
     for(const record of records) expect(record.querySelectorAll('td')[0].textContent).toContain('2026-10-12T');
@@ -247,7 +276,7 @@ describe('environmental evidence view', () => {
   it('does not retry provider failures', async () => {
     const fetch=vi.fn(async()=>({ok:false}));vi.stubGlobal('fetch',fetch);
     render(<Environmental session={session} analysis={doc()}/>);
-    await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+    await fetchThroughSteps();
     await screen.findByRole('alert');expect(fetch).toHaveBeenCalledTimes(1);
   });
   it.each(['sea_surface_temperature','air_temperature'])('renders one %s evidence card with both checks and separate query provenance',async(variable)=>{
@@ -264,8 +293,9 @@ describe('environmental evidence view', () => {
     const b={...a,operator:'>',threshold:22};
     const fetch=vi.fn(async()=>({ok:true,json:async()=>({requirements:[a,b],evidence_groups:[{...a,checks:[a,b]}]})}));vi.stubGlobal('fetch',fetch);
     render(<Environmental session={session} analysis={doc()}/>);
-    await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+    await fetchThroughSteps();
     expect(await screen.findAllByTestId('evidence-card')).toHaveLength(1);
+    await confirmLocation();
     expect(screen.getAllByTestId('environment-row')).toHaveLength(2);
     expect(screen.getAllByTestId('threshold-check')).toHaveLength(2);
     expect(screen.getByText('COVERED')).toBeVisible();
@@ -282,7 +312,7 @@ describe('environmental evidence view', () => {
       {...row,condition_id:'5',canonical_variable:'dissolved_oxygen',notes_for_evaluation:'Explicit depth required'}];
     const fetch=vi.fn(async()=>({ok:true,json:async()=>({requirements:rows,evidence_groups:[]})}));vi.stubGlobal('fetch',fetch);
     render(<Environmental session={session} analysis={doc()}/>);
-    await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+    await fetchThroughSteps();
     await waitFor(()=>expect(screen.getAllByTestId('environment-row')).toHaveLength(2));
     await userEvent.click(screen.getAllByText('Source and retrieval notes')[0]);
     expect(screen.getAllByText(/Provider unit FNU is not comparable/).some(node=>node.closest('[data-testid="unavailable-requirement"]'))).toBe(true);
@@ -293,7 +323,7 @@ describe('environmental evidence view', () => {
     render(<Environmental session={session} analysis={doc()}/>);
     fireEvent.input(screen.getByLabelText('Planned start (UTC)'),{target:{value:'2026-10-12T12:00'}});
     fireEvent.input(screen.getByLabelText('Planned end (UTC)'),{target:{value:'2026-10-12T14:00'}});
-    await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+    await fetchThroughSteps();
     const body=JSON.parse(fetch.mock.calls[0][1].body);
     expect(body.start_time).toBe('2026-10-12T12:00:00Z');expect(body.end_time).toBe('2026-10-12T14:00:00Z');
   });
@@ -308,7 +338,7 @@ describe('environmental evidence view', () => {
     expect(screen.getAllByTestId('chart')).toHaveLength(3);
     await waitFor(()=>expect(screen.getByRole('button',{name:'Environmental Intelligence',exact:true})).toBeEnabled());
     await user.click(screen.getByRole('button',{name:'Environmental Intelligence',exact:true}));
-    await user.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+    await fetchThroughSteps();
     await waitFor(()=>expect(fetch.mock.calls.filter(([url])=>url==='/api/environmental')).toHaveLength(1));
     await user.click(screen.getByRole('button',{name:'New Analysis'}));
     expect(screen.queryAllByTestId('environment-row')).toHaveLength(0);
@@ -324,6 +354,8 @@ it.each([
   const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
   const mapped={...row,canonical_variable:variable,unit,provider_evidence_unit:providerUnit,requirement_index:0};
   render(<Environmental session={session} analysis={{...doc(),environmental_mapping:[mapped]}}/>);
+  await confirmLocation();
+  openVariables();
   await userEvent.click(screen.getByText('Source and retrieval notes'));
   const input=screen.queryByLabelText('Manual FNU threshold · condition 4');
   if(visible){
@@ -338,16 +370,18 @@ it('manual input is only sent on explicit Fetch and invalid values never unlock 
   const mapped={...row,canonical_variable:'turbidity',unit:'NTU',threshold:25,requirement_index:0,provider_evidence_unit:'FNU'};
   const fetch=vi.fn(async()=>({ok:true,json:async()=>({requirements:[mapped],evidence_groups:[]})}));vi.stubGlobal('fetch',fetch);
   render(<Environmental session={session} analysis={{...doc(),environmental_mapping:[mapped]}}/>);
+  await confirmLocation();
+  openVariables();
   await userEvent.click(screen.getByText('Source and retrieval notes'));
   const input=screen.getByLabelText('Manual FNU threshold · condition 4');
   fireEvent.change(input,{target:{value:'-1'}});
   expect(fetch).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+  await fetchThroughSteps();
   expect(JSON.parse(fetch.mock.calls[0][1].body).manual_fnu_thresholds).toEqual({});
   await waitFor(()=>expect(screen.getByRole('button',{name:'Fetch Environmental Data'})).toBeEnabled());
   fireEvent.change(input,{target:{value:'27'}});
   expect(fetch).toHaveBeenCalledTimes(1);
-  await userEvent.click(screen.getByRole('button',{name:'Fetch Environmental Data'}));
+  await fetchThroughSteps();
   expect(JSON.parse(fetch.mock.calls[1][1].body).manual_fnu_thresholds).toEqual({'0':27});
   expect(fetch.mock.calls.every(([url])=>url==='/api/environmental')).toBe(true);
 });
