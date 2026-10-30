@@ -119,6 +119,25 @@ Branch: `qinren/permit-review-ui`. Local changes awaiting visual review.
 
 Verification: Frontend build and full test suite passed. Changes remain uncommitted for manual visual review.
 
+## 2026-10-30 — Human Review guidance, duplicate location and multi-select
+
+Branch: `qinren/fixbug-condition34`.
+
+- Linked a structured work location to the permit condition that quotes the same source passage. The location is shown within that condition and no longer appears as a duplicate review item or inflates the review count.
+- Preserved valid prior approval/applicability from a former duplicate location item when the linked condition has not yet been reviewed. The reviewed, source-verified point still becomes available to environmental retrieval.
+- Added a prominent Human Review instruction below the dashboard, animated downward start cue, and plain-English definitions of Approve and Applicable.
+- Added a Multi-select control and Select all visible action to the Review items list. Selected items appear in the existing right-hand detail area, where Bulk Approval and Bulk Applicability can be applied separately.
+- Bulk approval remains unavailable for source-unverified, conflicted, already-reviewed, corrected, or Not Applicable items; those cases need individual review.
+
+Verification: Not run in this update; awaiting manual review.
+
+## 2026-10-30 — Permit Intelligence visual corrections
+
+- Restored centered blue Key Permit Limits icons and blue STOP card text to match the PermitPulse palette.
+- Added spacing between limit cards and inside the Basic Information group.
+- Kept the three Condition Overview charts in one desktop row, with a single-column layout on narrow screens.
+- Added scoped styles after the older global stylesheet so these visual rules take effect in the built app.
+
 ## 2026-10-29 — Spatial approval unblocks Environmental Intelligence
 
 Branch: `qinren/permit-review-ui`.
@@ -129,3 +148,52 @@ Branch: `qinren/permit-review-ui`.
 - Updated the current local test run's already approved spatial item to Applicable; its review progress is now 34 of 34 complete.
 
 Verification: Spatial review tests (9/9) and focused frontend tests (21/21) passed.
+
+
+## 2026-10-30 — Permit typography and combined bulk review
+
+- Repositioned Next: Human Review under the spaced shortcut buttons and removed the inline review count.
+- Rendered oxygen as O₂ on one line, enlarged parameter names, reduced value text, darkened headings, and applied the Pulse teal to icons.
+- Placed All before To check in the review queue.
+- Combined approval and applicability in one aligned form with one Save Selected Reviews action; retained correction values and required Not Applicable justification.
+- Frontend production build passed. Focused combined-save checks cover both decisions, preserved corrections and required justification.
+
+
+## 2026-10-30 — One review readiness dashboard
+
+- Replaced the opening applicability ring with actual review completion: resolved items, remaining items and REVIEW COMPLETE / INCOMPLETE.
+- Reused the same reviewSummary readiness calculation previously used in the footer, including interpretation, applicability, conflicts and required justification.
+- Removed the separate Review readiness footer.
+
+
+## 2026-10-30 — Shortcut scroll position
+
+- Measured the running sticky header at approximately 154px, which obscured section headings with the former fixed offsets.
+- Both permit shortcuts now measure the current header height on each click and place the section below it with 16px clearance, including after viewport changes.
+
+
+## 2026-10-30 — Condition 5 source verification
+
+- Reconcile environmental quotations contaminated at their edges by observed repeated page furniture or page-number lines. Remaining wording must still match exactly one physical page.
+- Preserve original source spans and persisted analysis; show the verified quotation in Human Review.
+- Verified the latest Condition 5 now passes source verification without a new AI request or modifying its saved analysis.
+- Validation: 45 targeted backend tests passed, 1 skipped; frontend build passed.
+
+
+## 2026-10-30 — Skip unresolved sources in bulk review
+
+- Exclude unverified or conflicted rows from bulk writes, list the skipped conditions and reasons, and let eligible rows save. Skipped conditions remain unresolved for individual review.
+- Explain all-excluded selections without attempting a request.
+- Expanded the opening guidance to the full frame width, reduced row spacing, and centered START REVIEW with three downward arrows on each side.
+
+
+## 2026-10-30 — Review progress and applicability layout
+
+- Displayed resolved review progress as a horizontal bar, with applicability in a green/red/gray ring and labeled counts below.
+- Reduced the right-hand metrics to Pending review, Rejected and Source / review gaps.
+
+
+## 2026-10-30 — Aligned review overview panels
+
+- Kept applicability in the left panel and moved review progress above the three status cards in a single right panel.
+- Aligned both panels and moved Back/Next into a separate row below the full-width title.
