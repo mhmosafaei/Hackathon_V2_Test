@@ -2,6 +2,7 @@ import React from 'react';
 import {render,screen,fireEvent} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {it,expect,vi,afterEach} from 'vitest';
+vi.mock('./EnvironmentalMapCanvas.jsx', async importOriginal => ({...await importOriginal(), default: ()=><div aria-label="Environmental evidence map"/>}));
 import Environmental from './Environmental.jsx';
 
 const onlineConversion = {usable:true,status:'converted',confidence:'high',wgs84:{latitude:54.108618,longitude:-6.274707},
@@ -116,7 +117,6 @@ it('copies explicit UTC operation times without fetching and leaves Fetch behavi
   expect(fetch).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText('Latitude'),{target:{value:'54'}});
   fireEvent.change(screen.getByLabelText('Longitude'),{target:{value:'-6'}});
-  await userEvent.click(screen.getByRole('checkbox',{name:/Evaluate this confirmed point/}));
   await userEvent.click(screen.getByRole('button',{name:'Confirm Location & Time'}));
   await userEvent.click(screen.getByRole('button',{name:'Check Connections'}));
   await userEvent.click(await screen.findByRole('button',{name:'Fetch Environmental Data'}));

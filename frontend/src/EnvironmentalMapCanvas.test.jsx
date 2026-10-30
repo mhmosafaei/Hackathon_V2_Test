@@ -1,0 +1,29 @@
+import React from 'react';
+import {render,screen,act} from '@testing-library/react';
+import {it,expect,vi} from 'vitest';
+import EnvironmentalMapCanvas from './EnvironmentalMapCanvas.jsx';
+const fake=vi.hoisted(()=>{
+  const instance={setView:vi.fn(),invalidateSize:vi.fn(),fitBounds:vi.fn(),remove:vi.fn()};
+  instance.setView.mockReturnValue(instance);
+  const group={addTo:vi.fn(),clearLayers:vi.fn(),getLayers:vi.fn(()=>[{}]),getBounds:vi.fn(()=>({bounds:true}))};
+  group.addTo.mockReturnValue(group);
+  const tiles={addTo:vi.fn(),on:vi.fn()};tiles.addTo.mockReturnValue(tiles);tiles.on.mockReturnValue(tiles);
+  const marker=()=>({bindTooltip:vi.fn().mockReturnThis(),addTo:vi.fn().mockReturnThis()});
+  return {instance,group,tiles,marker,map:vi.fn(()=>instance),circleMarker:vi.fn(marker),geoJSON:vi.fn(marker),tileLayer:vi.fn(()=>tiles)};
+});
+vi.mock('leaflet',()=>({default:{map:fake.map,tileLayer:fake.tileLayer,featureGroup:()=>fake.group,circleMarker:fake.circleMarker,geoJSON:fake.geoJSON}}));
+it('renders separate query/sample markers, keeps attribution and cleans up the Leaflet instance',()=>{
+  const {rerender,unmount}=render(<EnvironmentalMapCanvas position={[54,-6]} sample={[54.01,-6.01]} valueLabel="Wind: 3 m/s" focusToken={0}/>);
+  expect(fake.circleMarker).toHaveBeenCalledWith([54,-6],expect.any(Object));
+  expect(fake.circleMarker).toHaveBeenCalledWith([54.01,-6.01],expect.any(Object));
+  expect(fake.tileLayer.mock.calls[0][1].attribution).toContain('OpenStreetMap');
+  const fitted=fake.instance.fitBounds.mock.calls.length;
+  rerender(<EnvironmentalMapCanvas position={[54,-6]} sample={[54.01,-6.01]} valueLabel="Wind: 4 m/s" focusToken={0}/>);
+  expect(fake.instance.fitBounds).toHaveBeenCalledTimes(fitted);
+  const handler=fake.tiles.on.mock.calls.find(([event])=>event==='tileerror')[1];
+  act(()=>handler());
+  expect(screen.getByRole('status')).toHaveTextContent('Basemap tiles could not be loaded');
+  const before=fake.instance.remove.mock.calls.length;
+  unmount();
+  expect(fake.instance.remove).toHaveBeenCalledTimes(before+1);
+});

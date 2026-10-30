@@ -215,3 +215,23 @@ Verification: Spatial review tests (9/9) and focused frontend tests (21/21) pass
 - Each variable reveals its units, implementation capability and matching permit conditions, thresholds, source quotations and retrieval notes.
 - Removed the separate Required by Permit / Contract and Environmental Capability Coverage sections. Manual FNU inputs remain attached to the relevant turbidity condition.
 - Validation: 51 related frontend tests passed; production build passed.
+
+
+## 2026-10-30 — Compact provider groups and geometry selector
+
+- Moved the opening instruction into the green confirmation note and defaulted editable depth to 0 m.
+- Replaced the point-only checkbox with Point / Polygon selection. Polygon is a clearly marked future input and cannot dispatch a point retrieval.
+- Confirming the point and UTC period scrolls to the data-source step; removed its redundant introductory sentence.
+- Provider information now forms a horizontal header above its variables. Variable names and condition references share a compact line.
+- Replaced Not connected badges with actual credential/public API configuration labels; connection checks and their results remain visible.
+
+
+## 2026-10-30 — Map-based environmental results
+
+- Replaced the default result-card wall with a Leaflet/OpenStreetMap map, a variable selector and a compact source/time/coverage panel.
+- Query location and actual provider sample/grid coordinates are drawn separately. Native values and UTC timestamps update when switching variables or already-retrieved times; no provider fetch occurs on selection.
+- Missing, masked or rejected values remain unavailable with their actual diagnostic. No passing or area-wide result is inferred from unavailable or point-only data.
+- Added validated Polygon/MultiPolygon GeoJSON rendering for structured boundaries; current environmental retrieval remains point-only and does not generate polygon-wide evidence.
+- Moved the full existing evidence/provenance/threshold audit into a collapsed Full Evidence & Audit Details section, preserving access to all native points and metadata.
+- Added bounded map resizing and cleanup, tile-failure feedback and OpenStreetMap attribution. Installed Leaflet 1.9.4.
+- Validation: 76 related frontend tests passed; production build passed. Live map tiles require network access.

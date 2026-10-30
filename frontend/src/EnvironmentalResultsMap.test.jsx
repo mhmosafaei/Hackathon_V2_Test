@@ -1,0 +1,41 @@
+import React from 'react';
+import {render,screen,fireEvent} from '@testing-library/react';
+import {it,expect,vi} from 'vitest';
+import EnvironmentalResultsMap, {queryPosition} from './EnvironmentalResultsMap.jsx';
+import {validGeometry,validPosition} from './EnvironmentalMapCanvas.jsx';
+vi.mock('./EnvironmentalMapCanvas.jsx', async original=>({...await original(),default:props=><div data-testid="map" data-position={JSON.stringify(props.position)} data-sample={JSON.stringify(props.sample)} data-geometry={JSON.stringify(props.geometry)} data-value={props.valueLabel}/>}));
+const wind={canonical_variable:'wind_speed_10m',condition_id:'6',operator:'>',threshold:12,unit:'m/s',status:'WITHIN_THRESHOLD',routing:{preferred_provider:'ECMWF_FORECAST'},evidence:{provider:'ECMWF_FORECAST',data_type:'MODEL_FORECAST',requested_coordinates:[54,-6],latitude:54.01,longitude:-6.01,points:[{raw_value:0,unit:'m/s',data_time:'2026-10-30T12:00:00Z',status:'WITHIN_THRESHOLD'},{raw_value:5,unit:'m/s',data_time:'2026-10-30T13:00:00Z',status:'WITHIN_THRESHOLD'}]}};
+it('shows the fetched query point separately from the actual provider grid and changes time without fetching',()=>{
+  const {container}=render(<EnvironmentalResultsMap rows={[wind]} query={{latitude:20,longitude:20}}/>);
+  expect(screen.getByTestId('map').dataset.position).toBe('[54,-6]');
+  expect(screen.getByTestId('map').dataset.sample).toBe('[54.01,-6.01]');
+  expect(container.querySelector('output')).toHaveTextContent('0 m/s');
+  fireEvent.change(screen.getByLabelText('Evidence time (UTC)'),{target:{value:'1'}});
+  expect(container.querySelector('output')).toHaveTextContent('5 m/s');
+  expect(screen.getByTestId('map').dataset.value).toContain('2026-10-30T13:00:00Z');
+});
+it('switches to unavailable variables and shows the actual reason rather than a passing value',()=>{
+  const missing={canonical_variable:'turbidity',condition_id:'14',status:'INSUFFICIENT_DATA',provider_diagnostic:{provider_error_message:'No compatible FNU observation.'}};
+  const {container}=render(<EnvironmentalResultsMap rows={[wind,missing]}/>);
+  fireEvent.click(screen.getByRole('button',{name:/turbidity/i}));
+  expect(container.querySelector('output')).toHaveTextContent('Unavailable');
+  expect(screen.getByText('No compatible FNU observation.')).toBeVisible();
+  expect(screen.getByText('NOT DETERMINED')).toBeVisible();
+  expect(screen.getByTestId('map').dataset.sample).toBe('null');
+});
+it('never uses a masked or rejected native value as the displayed measurement',()=>{
+  const masked={...wind,evidence:{...wind.evidence,points:[{raw_value:99,unit:'m/s',validation_notes:['Masked cell']}]}};
+  const {container}=render(<EnvironmentalResultsMap rows={[masked]}/>);
+  expect(container.querySelector('output')).toHaveTextContent('Unavailable');
+  expect(screen.getByTestId('map').dataset.value).not.toContain('99');
+});
+it('accepts a valid polygon boundary without claiming area-wide evidence and rejects invalid geometry',()=>{
+  const geometry={type:'Polygon',coordinates:[[[-6,54],[-5.9,54],[-5.9,54.1],[-6,54]]]};
+  render(<EnvironmentalResultsMap rows={[wind]} result={{geometry}}/>);
+  expect(screen.getByTestId('map').dataset.geometry).toBe(JSON.stringify(geometry));
+  expect(screen.getByText('Outline: work area, not area-wide evidence')).toBeVisible();
+  expect(validGeometry({type:'Polygon',coordinates:[[[-6,54],[-5.9,54],[-5.9,54.1]]]})).toBeNull();
+  expect(validGeometry({type:'Polygon',coordinates:[[[200,54],[201,54],[201,55],[200,54]]]})).toBeNull();
+  expect(validPosition([null,null])).toBe(false);
+  expect(queryPosition([],{})).toBeNull();
+});

@@ -2,6 +2,7 @@ import React from 'react';
 import {render, screen, waitFor, act, fireEvent, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, it, expect, vi, afterEach} from 'vitest';
+vi.mock('./EnvironmentalMapCanvas.jsx', async importOriginal => ({...await importOriginal(), default: ()=><div aria-label="Environmental evidence map"/>}));
 import Environmental, {blockerLabel, displayedPointLabel} from './Environmental.jsx';
 import App from './App.jsx';
 function openVariables() { document.querySelectorAll('details.requirement-variable').forEach(details=>{if(!details.open) fireEvent.click(details.querySelector('summary'));}); }
@@ -27,8 +28,6 @@ async function confirmLocation() {
     const input=screen.getByLabelText(label);
     if (!input.value) fireEvent.change(input,{target:{value}});
   }
-  const point=screen.getByRole('checkbox',{name:/Evaluate this confirmed point/});
-  if (!point.checked) await userEvent.click(point);
   await userEvent.click(screen.getByRole('button',{name:'Confirm Location & Time'}));
   return !!screen.queryByRole('region',{name:'Check data sources'});
 }
@@ -237,6 +236,8 @@ describe('environmental evidence view', () => {
     expect(fetch).not.toHaveBeenCalled();
     await fetchThroughSteps();
     await screen.findByTestId('evidence-card');
+    expect(screen.getByRole('region',{name:'Map and environmental variables'})).toBeVisible();
+    await userEvent.click(screen.getByText('Full Evidence & Audit Details'));
     expect(fetch).toHaveBeenCalledTimes(1);
     const body=JSON.parse(fetch.mock.calls[0][1].body);
     expect(body.analysis_id).toBe('fresh');expect(body.start_time).toBe('2026-10-13T00:00:00Z');expect(body.latitude).toBe(54);
@@ -244,12 +245,14 @@ describe('environmental evidence view', () => {
     expect(screen.getByText('1.2 m', {selector: 'strong'})).toBeVisible();
     expect(screen.queryByText('SAFE TO OPERATE')).not.toBeInTheDocument();
   });
-  it('restores a session-associated result without fetching', () => {
+  it('restores a session-associated result without fetching', async () => {
     const evidence={...row,status:'WITHIN_THRESHOLD',evidence:{provider:'COPERNICUS_MARINE',dataset_name:'Session cache',dataset_id:'SYNTHETIC',
       data_type:'MODEL_FORECAST',latitude:54,longitude:-6,depth:0,retrieved_at:'2026-10-12T12:00:00Z',
       points:[{data_time:'2026-10-12T12:00:00Z',raw_value:1.2,unit:'m',normalized_value:1.2,normalized_unit:'m',status:'WITHIN_THRESHOLD'}]}};
     const fetch=vi.fn(); vi.stubGlobal('fetch', fetch);
     render(<Environmental session={{...session, environmental_result:{analysis_id:'fresh',requirements:[evidence],evidence_groups:[evidence],provider_status:session.provider_status,executable_rules:0}}} analysis={doc()}/>);
+    expect(screen.getByRole('region',{name:'Map and environmental variables'})).toBeVisible();
+    await userEvent.click(screen.getByText('Full Evidence & Audit Details'));
     expect(screen.getByTestId('evidence-card')).toBeVisible();
     expect(screen.getByText('1.2 m', {selector:'strong'})).toBeVisible();
     expect(fetch).not.toHaveBeenCalled();
@@ -259,7 +262,7 @@ describe('environmental evidence view', () => {
     await userEvent.click(screen.getByText('Source geographic restrictions · 1'));
     expect(screen.getByText('Synthetic cable route',{selector:'b'})).toBeVisible();
     expect(screen.getByLabelText('Latitude')).toHaveValue(null);
-    expect(screen.getByText(/Routes and large areas: spatial sampling strategy required/)).toBeVisible();
+    expect(screen.getByLabelText('Assessment Geometry')).toHaveValue('point');
   });
   it.each([48,192])('renders %i populated source records in a compact points table',async(count)=>{
     const points=Array.from({length:count},(_,i)=>({data_time:`2026-10-12T${String(Math.floor(i/4)%24).padStart(2,'0')}:${String(i%4*15).padStart(2,'0')}:00Z`,raw_value:0.1+i/1000,unit:'m/s',normalized_value:0.1+i/1000,normalized_unit:'m/s',status:'INSUFFICIENT_DATA'}));
@@ -298,9 +301,10 @@ describe('environmental evidence view', () => {
     await confirmLocation();
     expect(screen.getAllByTestId('environment-row')).toHaveLength(2);
     expect(screen.getAllByTestId('threshold-check')).toHaveLength(2);
-    expect(screen.getByText('COVERED')).toBeVisible();
+    await userEvent.click(screen.getByText('Full Evidence & Audit Details'));
+    expect(within(screen.getByTestId('evidence-card')).getByText('COVERED')).toBeVisible();
     expect(screen.getAllByText(/NOT TRIGGERED/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Coastal applicability requires human review/)).toBeVisible();
+    expect(within(screen.getByTestId('evidence-card')).getByText(/Coastal applicability requires human review/)).toBeVisible();
     expect(screen.queryByText('NOT DETERMINED FOR REQUESTED PERIOD')).toBeNull();
     expect(screen.getByText('Provider query UTC period')).toBeVisible();
     expect(screen.getByText('Requested coordinates')).toBeVisible();

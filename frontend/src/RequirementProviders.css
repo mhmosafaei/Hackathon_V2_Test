@@ -33,6 +33,14 @@
 .requirement-provider-connection small{font-size:11px;color:#728792;}
 .requirement-credentials{font-size:11px;line-height:1.5;color:#476a7b;padding:8px 10px;margin-top:10px;background:#edf5f9;border-radius:6px;}
 .requirement-providers-empty{padding:0 24px 20px;color:#607b89;}
+.requirement-provider-row{display:flex;flex-direction:column;gap:12px;}
+.requirement-provider-row>.requirement-source-group{width:100%;}
+.requirement-provider-row>.requirement-provider-connection{width:100%;box-sizing:border-box;padding:12px 14px;border:0;border-radius:8px;background:#edf6f8;margin:0;}
+.requirement-provider-connection::before{display:none;}
+.requirement-provider-row .requirement-connection-heading{flex-wrap:wrap;}
+.requirement-provider-row .requirement-source-group summary>div{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;min-width:0;}
+.requirement-provider-row .requirement-source-group summary span{margin-top:0;}
+.requirement-provider-row .requirement-variable>summary{padding:8px 12px;}
 .requirement-variable-group-count{margin:0 0 10px;font-size:11px;color:#607b89;}
 .requirement-variable{border:1px solid #dae8ee;border-radius:8px;background:#f8fbfd;margin-bottom:9px;overflow:hidden;}
 .requirement-variable:last-child{margin-bottom:0;}

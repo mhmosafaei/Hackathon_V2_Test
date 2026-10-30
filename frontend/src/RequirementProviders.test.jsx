@@ -18,14 +18,15 @@ describe('Requirement and provider mapping', () => {
   });
   it('does not claim a configured or mock connector has connected', () => {
     const {rerender} = render(<RequirementProviders rows={[row]} providers={{COPERNICUS_MARINE:'Credentials configured · connection not tested'}}/>);
-    expect(screen.getByText('Not connected')).toBeVisible();
+    expect(screen.getByText('Credentials configured')).toBeVisible();
     expect(screen.getByText(/Connection not tested yet/)).toBeVisible();
     rerender(<RequirementProviders rows={[row]} mock providers={{COPERNICUS_MARINE:'Connected · retrieval completed'}}/>);
-    expect(screen.getByText('Not connected')).toBeVisible();
+    expect(screen.getByText('Offline preview')).toBeVisible();
   });
   it('reports a completed live retrieval as connected', () => {
     render(<RequirementProviders rows={[row]} providers={{COPERNICUS_MARINE:'Connected · retrieval completed; evidence suitability still checked separately'}}/>);
-    expect(screen.getByText('Connected')).toBeVisible();
+    expect(screen.getByText('Credentials configured')).toBeVisible();
+    expect(screen.getByText('Live retrieval completed.')).toBeVisible();
   });
   it('puts capability and matching conditions inside each visible variable', () => {
     const capabilities=[{canonical_variable:'significant_wave_height',display_name:'Significant wave height (Hs)',provider_family:'COPERNICUS_MARINE',implementation_status:'SUPPORTED',unit:'m',notes:'Wave model.'}];

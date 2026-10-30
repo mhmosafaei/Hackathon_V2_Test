@@ -1,6 +1,7 @@
 import React, {useState, useRef, useEffect} from 'react';
 import PermitContext from './PermitContext.jsx';
 import RequirementProviders from './RequirementProviders.jsx';
+import EnvironmentalResultsMap from './EnvironmentalResultsMap.jsx';
 import {environmentDefaults} from './environmentDefaults.js';
 import './EnvironmentalWorkflow.css';
 import environmentalLimits from '../../config/environmental_limits.json';
@@ -71,8 +72,11 @@ export default function Environmental({analysis, session, reviewData}) {
   const [longitude, setLongitude] = useState(defaults.longitude);
   const [start, setStart] = useState(defaults.start);
   const [end, setEnd] = useState(defaults.end);
-  const [depth, setDepth] = useState('');
-  const [pointOnly, setPointOnly] = useState(false);
+  const [depth, setDepth] = useState('0');
+  const [scopeType, setScopeType] = useState('point');
+  const pointOnly = scopeType === 'point';
+  const dataSourceRef = useRef(null);
+  const resultsRef = useRef(null);
   const [confirmedKey, setConfirmedKey] = useState(null);
   const [connectionCheck, setConnectionCheck] = useState(null);
   const [checking, setChecking] = useState(false);
@@ -87,6 +91,12 @@ export default function Environmental({analysis, session, reviewData}) {
       if (!edited.current.has(key) && defaults[key] !== '') setter(value => value === '' ? defaults[key] : value);
     }
   }, [defaults.latitude, defaults.longitude, defaults.start, defaults.end]);
+  useEffect(() => {
+    if (!confirmed || !dataSourceRef.current) return;
+    const section = dataSourceRef.current;
+    section.style.scrollMarginTop = `${(document.querySelector('.header')?.getBoundingClientRect().height || 0) + 16}px`;
+    section.scrollIntoView?.({behavior:'smooth',block:'start'});
+  }, [confirmed]);
   const sessionResult = session?.environmental_result;
   const [result, setResult] = useState(() =>
     sessionResult?.analysis_id === analysis?.analysis_id ? sessionResult : null);
@@ -100,6 +110,12 @@ export default function Environmental({analysis, session, reviewData}) {
     if (sessionResult?.analysis_id === analysis?.analysis_id) setResult(sessionResult);
     else if (!sessionResult) setResult(null);
   }, [sessionResult, analysis?.analysis_id]);
+  const hasResult = !!result;
+  useEffect(() => {
+    if (!hasResult || !resultsRef.current) return;
+    resultsRef.current.style.scrollMarginTop = `${(document.querySelector('.header')?.getBoundingClientRect().height || 0) + 16}px`;
+    resultsRef.current.scrollIntoView?.({behavior:'smooth',block:'start'});
+  }, [hasResult]);
   const rows = result?.requirements || analysis?.environmental_mapping || [];
   const evidenceCards = result?.evidence_groups || rows.filter(r => r.evidence?.points?.length);
   const unavailable = result ? rows.filter(r => !r.evidence?.points?.length
@@ -120,8 +136,8 @@ export default function Environmental({analysis, session, reviewData}) {
     if (latitude === '' || longitude === '' || !Number.isFinite(Number(latitude)) || Math.abs(Number(latitude))>90 || !Number.isFinite(Number(longitude)) || Math.abs(Number(longitude))>180) {setError('Enter valid WGS84 latitude and longitude.');return;}
     if (!start || !end || !(hours>0 && hours<=ENVIRONMENTAL_MAX_FETCH_HOURS)) {setError(`Select a positive UTC period of at most ${ENVIRONMENTAL_MAX_FETCH_HOURS} hours.`);return;}
     if (depth !== '' && (!Number.isFinite(Number(depth)) || Number(depth)<0 || Number(depth)>10000)) {setError('Enter a depth between 0 and 10000 metres, or leave it blank.');return;}
-    if (!pointOnly) {setError('Confirm that this assessment applies to the selected point only.');return;}
-    setError('');setConfirmedKey(inputKey);setConnectionCheck(null);setAcceptGaps(false);setResult(null);
+    if (!pointOnly) {setError('Polygon retrieval is not available yet. Select Point to continue.');return;}
+    edited.current.add('confirmed');setError('');setConfirmedKey(inputKey);setConnectionCheck(null);setAcceptGaps(false);setResult(null);
   }
   async function checkConnections() {
     if (!confirmed || checking || !session) return;
@@ -192,26 +208,28 @@ export default function Environmental({analysis, session, reviewData}) {
   return <div className="environment-panel">
     {analysis.mode === 'MOCK' && <p className="notice warning">Offline preview · Any fetched values are synthetic mocked test evidence.</p>}
     {!extracted.length ? <>{permitContext}<div className="empty-state"><p>No explicit environmental data requirements were identified in this permit.</p></div></> : <>
-      <section className="card environment-controls environment-setup-step"><div className="environment-step-label">1 · LOCATION & TIME</div><h2>Confirm Location & Time</h2><p>Confirm where and when you plan to work, then fetch the environmental data required by your permit.</p><p className="environment-prefill-note">{defaults.latitude ? 'Coordinates pre-filled from your reviewed permit location.' : 'Choose a reviewed permit location or enter confirmed WGS84 coordinates.'} {defaults.timingNote}</p><details className="environment-source-context"><summary>View permit location and date details</summary>{permitContext}</details>
+      <section className="card environment-controls environment-setup-step"><div className="environment-step-label">1 · LOCATION & TIME</div><h2>Confirm Location & Time</h2><p className="environment-prefill-note"><span className="environment-prefill-intro">Confirm where and when you plan to work, then fetch the environmental data required by your permit.</span>{defaults.latitude ? 'Coordinates pre-filled from your reviewed permit location.' : 'Choose a reviewed permit location or enter confirmed WGS84 coordinates.'} {defaults.timingNote}</p><details className="environment-source-context"><summary>View permit location and date details</summary>{permitContext}</details>
         {!!analysis.geofences?.length && <details><summary>Source geographic restrictions · {analysis.geofences.length}</summary>{analysis.geofences.map((g,i) => <p key={i}><b>{g.name}</b> · {g.type}<br/>{g.coordinates_or_boundary || g.restriction}<br/>Physical pages {g.source_pages.join(', ')}</p>)}</details>}
-        <div className="environment-form">
+        <label className="environment-scope-selector">Assessment Geometry<select value={scopeType} onChange={e=>{edited.current.add('scopeType');setScopeType(e.target.value);setResult(null);}}><option value="point">Point</option><option value="polygon">Polygon (coming soon)</option></select></label>
+        {!pointOnly && <p role="status" className="environment-polygon-placeholder">Polygon input will be supported here in a future update. Select Point to retrieve data for one confirmed location.</p>}
+        {pointOnly && <div className="environment-form">
           <label>Latitude<input type="number" min="-90" max="90" step="any" value={latitude} onChange={e => {edited.current.add('latitude');setLatitude(e.target.value);setResult(null);}}/></label>
           <label>Longitude<input type="number" min="-180" max="180" step="any" value={longitude} onChange={e => {edited.current.add('longitude');setLongitude(e.target.value);setResult(null);}}/></label>
           <label>Planned start (UTC)<input type="datetime-local" value={start} onInput={e => {edited.current.add('start');setStart(e.target.value);setResult(null);}} onChange={e => {edited.current.add('start');setStart(e.target.value);setResult(null);}}/></label>
           <label>Planned end (UTC)<input type="datetime-local" value={end} onInput={e => {edited.current.add('end');setEnd(e.target.value);setResult(null);}} onChange={e => {edited.current.add('end');setEnd(e.target.value);setResult(null);}}/></label>
           <label>Depth (m, when applicable)<input type="number" min="0" step="any" value={depth} onChange={e => {edited.current.add('depth');setDepth(e.target.value);setResult(null);}}/></label>
-        </div>
-        <label className="point-confirm"><input type="checkbox" checked={pointOnly} onChange={e => {edited.current.add('pointOnly');setPointOnly(e.target.checked);setResult(null);}}/> Evaluate this confirmed point only, not an entire route or polygon.</label>
-        <p className="muted">Routes and large areas: spatial sampling strategy required. No midpoint is inferred.</p>
-        <button className="button primary" onClick={confirmInputs} disabled={loading || checking}>{confirmed ? 'Location & Time Confirmed' : 'Confirm Location & Time'}</button>
+        </div>}
+        <button className="button primary" onClick={confirmInputs} disabled={loading || checking || !pointOnly}>{confirmed ? 'Location & Time Confirmed' : 'Confirm Location & Time'}</button>
       </section>
-      {confirmed && <section className="environment-connection-step" aria-label="Check data sources"><div className="environment-step-header"><div><div className="environment-step-label">2 · DATA SOURCES</div><h2>Check Data Sources</h2><p>Check connectivity before retrieving evidence. A successful connection does not guarantee data coverage.</p></div><button className="button primary" disabled={checking || loading || !session} onClick={checkConnections}>{checking ? 'Checking connections…' : checked ? 'Check Connections Again' : 'Check Connections'}</button></div>
-        <RequirementProviders rows={rows} providers={providers} capabilities={capabilities} mock={analysis.mode === 'MOCK'} renderConditions={renderConditions}/>
+      {confirmed && <section ref={dataSourceRef} className="environment-connection-step" aria-label="Check data sources"><div className="environment-step-header"><div><div className="environment-step-label">2 · DATA SOURCES</div><h2>Check Data Sources</h2></div><button className="button primary" disabled={checking || loading || !session} onClick={checkConnections}>{checking ? 'Checking connections…' : checked ? 'Check Connections Again' : 'Check Connections'}</button></div>
+        <RequirementProviders rows={rows} providers={providers} configuration={session?.provider_status} capabilities={capabilities} mock={analysis.mode === 'MOCK'} renderConditions={renderConditions}/>
         {checked && <div className="environment-check-result" role="status">{connectionCheck.mock ? 'Offline preview: no live connections checked.' : 'Connection check completed.'}{Object.entries(connectionCheck.checks || {}).map(([name,check])=><p key={name}><strong>{label(name)}:</strong> {check.message}</p>)}{gaps && <label><input type="checkbox" checked={acceptGaps} onChange={e=>setAcceptGaps(e.target.checked)}/> Continue with unavailable sources recorded as evidence gaps.</label>}</div>}
       </section>}
       {canFetch && <section className="card environment-fetch-step"><div className="environment-step-label">3 · RETRIEVE EVIDENCE</div><h2>Fetch Environmental Data</h2><p>Retrieve permit-required variables for the confirmed point and UTC period above.</p><button className="button primary" onClick={fetchEvidence} disabled={loading || checking || !session}>{loading ? 'Fetching evidence…' : 'Fetch Environmental Data'}</button></section>}
       {error && <p role="alert" className="notice warning">{error}</p>}
-      {result && <><div className="environment-results-heading"><div className="environment-step-label">4 · RESULTS</div><h2>Retrieved Environmental Evidence</h2></div>
+      {result && <><div ref={resultsRef} className="environment-results-heading"><div className="environment-step-label">4 · RESULTS</div><h2>Retrieved Environmental Evidence</h2></div>
+      <EnvironmentalResultsMap rows={rows} result={result} query={{latitude:latitude === '' ? null : Number(latitude),longitude:longitude === '' ? null : Number(longitude)}} screening={comparisonLabel} pointScreening={displayedPointLabel} blocker={blockerLabel}/>
+      <details className="environment-full-audit"><summary>Full Evidence & Audit Details</summary>
       {diagnostics.filter(r=>r.canonical_variable==='dissolved_oxygen' && r.provider_diagnostic).map((r,i)=><section className="card evidence-card" key={`oxygen-diagnostic-${i}`} data-testid="provider-diagnostic-card"><h2>Dissolved oxygen · provider diagnostic</h2><p>{blockerLabel(r)}</p><dl><dt>Provider / product / dataset / variable</dt><dd>{r.provider_metadata?.provider || r.provider_diagnostic.provider} · {r.provider_metadata?.dataset_name || 'Product metadata unavailable'} · {r.provider_diagnostic.dataset_id} · {r.provider_diagnostic.variable}</dd><dt>Requested nominal depth / mode / tolerance</dt><dd>{num(r.provider_metadata?.requested_depth_m ?? r.request?.depth) ?? 'Unavailable'} m · {r.provider_metadata?.requested_depth_mode || r.request?.requested_depth_mode || 'Unavailable'} · {num(r.provider_metadata?.depth_tolerance_m) ?? 'Unavailable'} m</dd><dt>Native unit / returned UTC range (coverage not established)</dt><dd>{r.provider_metadata?.native_unit || 'Unavailable'} · {r.provider_metadata?.returned_time_start || 'Unavailable'} → {r.provider_metadata?.returned_time_end || 'Unavailable'}</dd><dt>Normalized unit (no screened value)</dt><dd>{r.provider_metadata?.normalized_unit || 'Not established'}</dd><dt>Requested / selected model coordinates</dt><dd>{r.provider_metadata?.requested_coordinates?.join(', ') || 'Unavailable'} · selected {r.provider_metadata?.selected_coordinates?.join(', ') || 'Not determined before depth rejection'}</dd><dt>Depth axis convention</dt><dd>{r.provider_metadata?.depth_axis_unit || 'Unavailable'} · positive {r.provider_metadata?.depth_axis_positive || 'Unavailable'}</dd><dt>Requested / provider query UTC period</dt><dd>{r.request?.start_time || 'Unavailable'} → {r.request?.end_time || 'Unavailable'} · query {r.request?.provider_query_start || 'Unavailable'} → {r.request?.provider_query_end || 'Unavailable'}</dd><dt>Returned provider depth levels</dt><dd>{r.provider_metadata?.returned_depth_levels_m?.map(v=>num(v)).join(', ') || 'Unavailable'}</dd><dt>Selected provider depth / difference</dt><dd>{num(r.provider_metadata?.selected_depth_m) ?? 'Unavailable'} / {num(r.provider_metadata?.depth_difference_m) ?? 'Unavailable'} m</dd></dl><p>No usable evidence or threshold result is claimed. Modelled supportive evidence is not an in-situ measurement.</p></section>)}
       {unavailable.map((r,i)=><section className="card evidence-card" key={`unavailable-${i}`} data-testid="unavailable-requirement"><h2>Condition {r.condition_id} · {label(r.canonical_variable)}</h2><p>NOT DETERMINED · evidence unavailable</p><p>Provider mapping: {label(r.routing?.preferred_provider)}</p><p>{r.provider_diagnostic?.provider_error_category}</p><p>{r.provider_diagnostic?.provider_error_message || r.notes_for_evaluation || 'Required evidence unavailable.'}</p><p>{r.requirement_text}</p>{r.provider_diagnostic && <p>Dataset: {r.provider_diagnostic.dataset_id || 'Unavailable'} · Variable: {r.provider_diagnostic.variable || 'Unavailable'}</p>}{r.canonical_variable==='turbidity' && <p>Turbidity evidence unavailable — an applicable mandatory requirement remains UNKNOWN until compatible evidence is available. Not a passing threshold result; source/review safeguards remain required.</p>}</section>)}
       <div className="environment-evidence">{evidenceCards.filter(r => r.evidence?.points?.length).map((r,i) => <section className="card evidence-card" key={i} data-testid="evidence-card">
@@ -248,7 +266,7 @@ export default function Environmental({analysis, session, reviewData}) {
         <p>{r.notes_for_evaluation}</p><p className="muted">{r.evidence.comparison_scope}</p>
         <details><summary>All retrieved points · {r.evidence.points.length}</summary><div className="table-scroll"><table className="retrieved-points"><thead><tr><th>UTC time</th><th>Source value</th></tr></thead><tbody>{r.evidence.points.map((p,j) => <tr key={j} data-testid="retrieved-point"><td>{p.data_time || 'Unavailable timestamp'}</td><td>{num(p.raw_value) ?? 'Missing'} {p.unit}
           <details><summary>Evaluation details</summary><p>Normalized: {num(p.normalized_value) ?? 'Unavailable'} {p.normalized_unit}</p><p>{p.status === 'INSUFFICIENT_DATA' ? 'INSUFFICIENT DATA' : p.comparison === true ? 'Threshold comparison true' : p.comparison === false ? 'Threshold comparison false' : label(p.status)}</p>{p.validation_notes?.map((note,k)=><p key={k}>{note}</p>)}</details></td></tr>)}</tbody></table></div></details>
-      </section>)}</div></>}
+      </section>)}</div></details></>}
     </>}
   </div>;
 }

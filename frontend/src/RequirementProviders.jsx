@@ -13,7 +13,7 @@ const names = {
 const pretty = value => String(value || 'Unspecified variable').replaceAll('_', ' ');
 const conditionKey = (row, index) => row.condition_id == null ? `missing-${index}` : String(row.condition_id);
 const capabilityName = variable => ({surface_current_speed:'current_speed',surface_current_direction:'current_direction'}[variable] || variable);
-export default function RequirementProviders({rows = [], providers = {}, capabilities = [], mock = false, renderConditions}) {
+export default function RequirementProviders({rows = [], providers = {}, capabilities = [], mock = false, renderConditions, configuration = providers}) {
   const groups = new Map();
   rows.forEach((row, index) => {
     const provider = row.routing?.preferred_provider || 'UNAVAILABLE';
@@ -23,7 +23,6 @@ export default function RequirementProviders({rows = [], providers = {}, capabil
   const total = new Set(rows.map(conditionKey)).size;
   return <section className="card requirement-providers" aria-label="Environmental requirements and providers">
     <div className="requirement-providers-heading"><div><h2><Waves size={19}/> Environmental Requirements</h2><p>Select a variable to inspect its permit conditions, units and capability details.</p></div><strong className="requirement-total">{total}<span>requirements</span></strong></div>
-    <div className="requirement-provider-columns" aria-hidden="true"><span>Required Evidence</span><span>Data Source & Connection</span></div>
     {[...groups].map(([key, items]) => {
       const [name, Icon, href, method] = names[key] || [pretty(key), Database, null, 'No automatic retrieval is configured.'];
       const variables = [...new Set(items.map(row => row.canonical_variable))];
@@ -31,9 +30,11 @@ export default function RequirementProviders({rows = [], providers = {}, capabil
       const status = String(providers[key] || '');
       const connected = !mock && /^Connected\b/i.test(status) && !/not tested|mock|synthetic/i.test(status);
       const failed = !connected && /failed|error/i.test(status);
-      const credentialRequired = key === 'COPERNICUS_MARINE' && !/credentials configured|^Connected\b/i.test(status);
+      const credentialRequired = key === 'COPERNICUS_MARINE' && !/credentials configured|^Connected\b/i.test(String(configuration[key] || status));
+      const sourceStatus = mock ? 'Offline preview' : key === 'COPERNICUS_MARINE' ? credentialRequired ? 'Credentials required' : 'Credentials configured' : connected ? 'Connection verified' : failed ? 'Connection check failed' : ['ECMWF_FORECAST','ERA5'].includes(key) ? 'Public API · no key required' : 'No live connector';
       const connectionNote = mock ? 'Offline preview · no live connection confirmed.' : connected ? /connection check/i.test(status) ? 'Connection check passed. Evidence not yet retrieved.' : 'Live retrieval completed.' : failed ? 'Last connection attempt failed.' : /credentials required/i.test(status) ? 'Credentials required before connecting.' : ['EXTERNAL','UNAVAILABLE','NOT_APPLICABLE'].includes(key) ? 'No automatic connection.' : 'Connection not tested yet. Use Check Connections above to check.';
       return <div className="requirement-provider-row" key={key}>
+        <div className="requirement-provider-connection"><div className="requirement-connection-heading">{href ? <a href={href} target="_blank" rel="noreferrer">{name}<ExternalLink size={13}/></a> : <strong>{name}</strong>}<span className={`requirement-connect-state ${connected ? 'is-connected' : 'is-disconnected'}`}>{sourceStatus}</span></div><p>{method}</p><small>{connectionNote}</small>{key === 'COPERNICUS_MARINE' && credentialRequired && <div className="requirement-credentials">{credentialRequired ? 'Credentials required: configure your Copernicus Marine username and password in the backend .env file.' : 'Copernicus Marine credentials configured.'}</div>}</div>
         <div className="requirement-source-group"><p className="requirement-variable-group-count">{count} requirement{count === 1 ? '' : 's'} · {variables.length} variable{variables.length === 1 ? '' : 's'}</p>{variables.map(variable => {
           const matching = items.filter(row => row.canonical_variable === variable);
           const ids = [...new Set(matching.map(row => row.condition_id).filter(id => id != null))];
@@ -44,7 +45,6 @@ export default function RequirementProviders({rows = [], providers = {}, capabil
             {renderConditions ? renderConditions(matching) : matching.map((row,i)=><article className="requirement-condition-detail" key={i}><h4>Condition {row.condition_id}</h4><p>{row.requirement_text}</p></article>)}
           </div></details>;
         })}</div>
-        <div className="requirement-provider-connection"><div className="requirement-connection-heading">{href ? <a href={href} target="_blank" rel="noreferrer">{name}<ExternalLink size={13}/></a> : <strong>{name}</strong>}<span className={`requirement-connect-state ${connected ? 'is-connected' : 'is-disconnected'}`}>{connected ? 'Connected' : 'Not connected'}</span></div><p>{method}</p><small>{connectionNote}</small>{key === 'COPERNICUS_MARINE' && <div className="requirement-credentials">{credentialRequired ? 'Credentials required: configure your Copernicus Marine username and password in the backend .env file.' : 'Copernicus Marine credentials configured.'}</div>}</div>
       </div>;
     })}
     {!groups.size && <p className="requirement-providers-empty">No environmental requirements identified in this permit.</p>}

@@ -2,6 +2,7 @@ import React from 'react';
 import {render,screen,fireEvent,waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {it,expect,vi,afterEach} from 'vitest';
+vi.mock('./EnvironmentalMapCanvas.jsx', async importOriginal => ({...await importOriginal(), default: ()=><div aria-label="Environmental evidence map"/>}));
 import Environmental from './Environmental.jsx';
 import {environmentDefaults} from './environmentDefaults.js';
 const point={geometry_type:'point',point_verified:true,source_verified:true,latitude:54.025,longitude:-5.925};
@@ -20,11 +21,13 @@ it('reveals sources only after confirmation and fetch only after the explicit co
   vi.stubGlobal('fetch',fetch);
   render(<Environmental analysis={analysis} session={session}/>);
   expect(screen.getByLabelText('Longitude')).toHaveValue(-5.925);
+  expect(screen.getByLabelText('Depth (m, when applicable)')).toHaveValue(0);
+  expect(screen.queryByRole('checkbox',{name:/Evaluate this confirmed point/})).toBeNull();
   expect(screen.queryByRole('button',{name:'Check Connections'})).toBeNull();
   expect(screen.queryByRole('button',{name:'Fetch Environmental Data'})).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole('checkbox',{name:/Evaluate this confirmed point/}));
   await userEvent.click(screen.getByRole('button',{name:'Confirm Location & Time'}));
+  expect(screen.getByRole('region',{name:'Check data sources'}).style.scrollMarginTop).toBe('16px');
   expect(fetch).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole('button',{name:'Check Connections'}));
   await screen.findByRole('button',{name:'Fetch Environmental Data'});
@@ -36,10 +39,20 @@ it('reveals sources only after confirmation and fetch only after the explicit co
   expect(screen.queryByRole('button',{name:'Fetch Environmental Data'})).toBeNull();
   expect(screen.queryByText('Retrieved Environmental Evidence')).toBeNull();
 });
+it('reserves polygon input without dispatching a point request for it',async()=>{
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  render(<Environmental analysis={analysis} session={session}/>);
+  await userEvent.selectOptions(screen.getByLabelText('Assessment Geometry'),'polygon');
+  expect(screen.getByText(/Polygon input will be supported here/)).toBeVisible();
+  expect(screen.getByRole('button',{name:'Confirm Location & Time'})).toBeDisabled();
+  expect(screen.queryByRole('button',{name:'Check Connections'})).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+  await userEvent.selectOptions(screen.getByLabelText('Assessment Geometry'),'point');
+  expect(screen.getByLabelText('Depth (m, when applicable)')).toHaveValue(0);
+});
 it('requires acknowledgement before continuing with a failed source',async()=>{
   vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,json:async()=>({checks:{ECMWF_FORECAST:{connected:false,message:'Connection failed.'}},provider_status:{ECMWF_FORECAST:'Not connected'}})})));
   render(<Environmental analysis={analysis} session={session}/>);
-  await userEvent.click(screen.getByRole('checkbox',{name:/Evaluate this confirmed point/}));
   await userEvent.click(screen.getByRole('button',{name:'Confirm Location & Time'}));
   await userEvent.click(screen.getByRole('button',{name:'Check Connections'}));
   const acknowledge=await screen.findByRole('checkbox',{name:/Continue with unavailable sources/});
