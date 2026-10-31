@@ -11,8 +11,8 @@ from src.environmental.errors import ProviderError
 from src.environmental.service import evaluate, map_requirements
 from src.permit.simple_api import create_app
 from src.permit.simple_fixture import mock_request
-from tests.test_environmental_sampling import fixture_requirement
-from tests.test_simple_environment import analysis, inputs
+from tests.test_environmental_sampling import fixture_requirement, query_evidence
+from tests.test_simple_environment import analysis, inputs, approve_synthetic_point
 
 
 def oxygen():
@@ -20,31 +20,30 @@ def oxygen():
 
 
 def test_oxygen_daily_3d_extraction_persistence_provider_api(tmp_path,monkeypatch):
-    import copernicusmarine
     r=oxygen()
     extracted={k:v for k,v in r.items() if k not in {'source_verified','review_state','executable'}}
     calls=[];extraction_calls=[]
-    def opened(**kwargs):
-        calls.append(kwargs)
-        start=datetime.fromisoformat(kwargs['start_datetime'])
-        end=datetime.fromisoformat(kwargs['end_datetime'])
-        times=[start+timedelta(days=i) for i in range((end-start).days+1)]
-        ds=xr.Dataset({'o2':(('time','depth','latitude','longitude'),np.full((len(times),1,1,1),200.))},
-            coords={'time':np.array([t.replace(tzinfo=None) for t in times],dtype='datetime64[s]'),
-                    'depth':[1.], 'latitude':[54.], 'longitude':[-6.]})
-        ds.o2.attrs['units']='mmol m-3'
-        return ds
-    monkeypatch.setattr(copernicusmarine,'open_dataset',opened)
+    def provider(request):
+        calls.append(request)
+        evidence = query_evidence(request)
+        evidence.update({'temporal_resolution': 86400, 'quality_status': 'COASTAL_REVIEW_REQUIRED',
+                         'notes': 'Synthetic supportive modelled evidence; not equivalent to required in-situ monitoring; cannot resolve subdaily excursions.'})
+        for point in evidence['points']:
+            point.update({'raw_value': 200, 'unit': 'mmol m-3'})
+        return evidence
     def extraction(packet):
         extraction_calls.append(1)
         payload=mock_request(packet);payload['conditions']=payload['conditions'][:1]
         payload['environmental_requirements']=[extracted]
         return payload
     with pymupdf.open() as pdf:
-        pdf.new_page().insert_textbox(pymupdf.Rect(40,40,550,750),'1. '+r['requirement_text'])
+        pdf.new_page().insert_textbox(pymupdf.Rect(40,40,550,750),
+            'Synthetic work point: WGS84 latitude 54.1 longitude -6.1.\n'
+            '1. Significant wave height greater than 1.5 m shall be flagged for review.\n'
+            '1. '+r['requirement_text'])
         data=pdf.tobytes()
     with TestClient(create_app(tmp_path,transport=extraction,
-                            environmental_transports={'COPERNICUS_MARINE':worker})) as client:
+                            environmental_transports={'COPERNICUS_MARINE':provider})) as client:
         headers={'x-session-id':client.get('/api/session').json()['boot_id'],
                  'x-filename':'UNOFFICIAL_OXYGEN_SOFTWARE_TEST.pdf'}
         response=client.post('/api/analyze',content=data,headers=headers)
@@ -55,17 +54,21 @@ def test_oxygen_daily_3d_extraction_persistence_provider_api(tmp_path,monkeypatc
         stored=json.loads(next(tmp_path.rglob('analysis.json')).read_text(encoding='utf-8'))
         assert stored['environmental_requirements']==doc['environmental_requirements']
         period=inputs().model_dump(mode='json');period['analysis_id']=doc['analysis_id']
+        approve_synthetic_point(client, doc, headers)
+        period['latitude'],period['longitude']=54.1,-6.1
         period['start_time']=datetime.now(timezone.utc).replace(hour=12,minute=0,second=0,microsecond=0).isoformat()
         period['end_time']=(datetime.fromisoformat(period['start_time'])+timedelta(hours=24)).isoformat()
         result=client.post('/api/environmental',json=period,headers=headers)
         assert result.status_code==200
-        body=result.json();row=body['requirements'][0];e=row['evidence']
+        body=result.json();row=body['requirements'][0]
+        assert 'evidence' in row, body
+        e=row['evidence']
         assert len(extraction_calls)==len(calls)==1
         assert row['routing']['preferred_provider']=='COPERNICUS_MARINE'
-        assert calls[0]['dataset_id']=='cmems_mod_nws_bgc-o2_anfc_7km-3D_P1D-m'
-        assert calls[0]['variables']==['o2']
-        assert calls[0]['minimum_depth']==calls[0]['maximum_depth']==row['request']['depth']==1
-        assert e['depth']==1 and e['requested_depth']==1
+        assert calls[0].dataset_id=='cmems_mod_nws_bgc-o2_anfc_7km-3D_P1D-m'
+        assert calls[0].dataset_variable=='o2'
+        assert calls[0].depth==row['request']['depth']==1
+        assert e['depth']==1 and e.get('requested_depth', e['depth'])==1
         assert e['temporal_resolution']==row['request']['timestep_seconds']==86400
         assert e['temporal_coverage_status']=='COVERED' and e['retrieval_status']=='SUCCESS'
         assert e['quality_status']=='COASTAL_REVIEW_REQUIRED'

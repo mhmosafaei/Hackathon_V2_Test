@@ -1,9 +1,11 @@
 import json
+import pytest
 from pathlib import Path
 from src.documents.page_filter import select_pages_with_numbered_conditions
 from src.documents.pdf_parser import PdfPage
 from src.permit.coverage import coverage_gate
 
+@pytest.mark.source_backed
 def test_coverage_audit_detects_keyword_filter_omission():
     audit=json.loads(Path('cache/extractions/ml2025054/coverage_audit.json').read_text())
     assert audit['page_filter_omissions'][0]['page']==3

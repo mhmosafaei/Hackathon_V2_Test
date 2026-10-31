@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import httpx
 import pytest
-from tests.test_simple_environment import requirement, analysis, inputs
+from tests.test_simple_environment import requirement, analysis, inputs, approve_synthetic_point
 from src.environmental.service import evaluate, compatible_points
 from src.environmental.fixture import mock_evidence
 from src.environmental.sampling import timestep_bounds, weather_spatial_limit, source_depth
@@ -178,7 +178,8 @@ def test_explicit_depth_survives_single_extraction_persistence_and_api(tmp_path)
     r=fixture_requirement(1);r['condition_id']='1'
     for key in ('source_verified','review_state','executable'):r.pop(key)
     with pymupdf.open() as pdf:
-        pdf.new_page().insert_textbox(pymupdf.Rect(50,50,550,750),'1. '+r['requirement_text'])
+        pdf.new_page().insert_textbox(pymupdf.Rect(50,50,550,750),
+            'Synthetic work point: WGS84 latitude 54.1 longitude -6.1.\n1. '+r['requirement_text'])
         data=pdf.tobytes()
     extraction_calls=[];provider_calls=[]
     def transport(packet):
@@ -198,6 +199,8 @@ def test_explicit_depth_survives_single_extraction_persistence_and_api(tmp_path)
         stored=json.loads(next(tmp_path.rglob('analysis.json')).read_text())
         assert stored['environmental_requirements'][0]['depth_requirement']=='1 metre below sea surface'
         options=inputs().model_dump(mode='json');options['analysis_id']=doc['analysis_id']
+        approve_synthetic_point(client, doc, headers)
+        options['latitude'], options['longitude'] = 54.1, -6.1
         evidence=client.post('/api/environmental',json=options,headers=headers)
         assert evidence.status_code==200 and provider_calls[0].depth==1
         assert len(extraction_calls)==1 and evidence.json()['executable_rules']==0

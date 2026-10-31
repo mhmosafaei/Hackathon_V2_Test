@@ -21,6 +21,7 @@ def saved():
     return json.loads((RUN / 'candidate_aggregate.json').read_text(encoding='utf-8'))
 
 
+@pytest.mark.source_backed
 def test_kilkeel_projection_preserves_all_candidates_and_missing_conditions():
     original = saved()
     before = deepcopy(original)
@@ -43,6 +44,7 @@ def test_kilkeel_projection_preserves_all_candidates_and_missing_conditions():
     assert len(ais) == 2 and all(m['evidence_source'] == 'AIS_GNSS' and m['automation_status'] == 'EXTERNAL_DATA_REQUIRED' for m in ais)
 
 
+@pytest.mark.source_backed
 def test_page_19_correction_is_unique_source_backed_and_audited():
     import pymupdf
     with pymupdf.open(RUN / 'source.pdf') as pdf:
@@ -58,6 +60,7 @@ def test_page_19_correction_is_unique_source_backed_and_audited():
     assert next(c for c in saved()['candidates'] if c['candidate_id'] == row.requirement_id)['page_number'] == 4
 
 
+@pytest.mark.source_backed
 def test_local_persistence_exports_registration_and_review_gate(tmp_path):
     folder = tmp_path / 'cache/document_runs/offline-projection'
     folder.mkdir(parents=True)
@@ -86,6 +89,7 @@ def test_local_persistence_exports_registration_and_review_gate(tmp_path):
     assert persist_projection(folder, filename='permit.pdf', document_sha256='a'*64).read_bytes() == first
 
 
+@pytest.mark.source_backed
 def test_ambiguous_source_page_is_not_silently_corrected():
     aggregate = saved()
     source = next(s for s in aggregate['source_inventory'] if s['section_reference'] == '19')
@@ -103,6 +107,7 @@ def test_active_run_survives_restart_and_does_not_override_explicit_selection():
     assert resolve_active_permit(documents, 'belfast', 'run-fresh') == 'belfast'
 
 
+@pytest.mark.source_backed
 def test_real_streamlit_cached_kilkeel_dashboard_renders_without_network(monkeypatch):
     from streamlit.testing.v1 import AppTest
     def no_network(*args, **kwargs):

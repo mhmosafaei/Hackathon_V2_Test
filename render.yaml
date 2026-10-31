@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: permitpulse-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash scripts/start_render.sh
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: PERMITPULSE_DATA_DIR
+        value: /tmp/permitpulse-data
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+      - key: PERMITPULSE_ALLOWED_ORIGIN
+        sync: false
+      - key: PERMITPULSE_PRIVATE_DEMO
+        value: '1'
+      - key: PERMITPULSE_DEMO_USERNAME
+        sync: false
+      - key: PERMITPULSE_DEMO_PASSWORD
+        sync: false

@@ -37,6 +37,24 @@ def inputs(**updates):
         start_time=start, end_time=start+timedelta(hours=2), **updates)
 
 
+def approve_synthetic_point(client, document, headers):
+    """Approve the source-backed synthetic point through the review API."""
+    reviews = client.get(f"/api/reviews?analysis_id={document['analysis_id']}", headers=headers)
+    assert reviews.status_code == 200
+    point = next(row for row in reviews.json()['requirements'] if row['kind'] == 'spatial_context')
+    response = client.put(f"/api/reviews/{point['target_id']}", headers=headers, json={
+        'analysis_run_id': document['analysis_id'],
+        'document_sha256': document['document_sha256'],
+        'review': {
+            'original_fingerprint': point['original_fingerprint'],
+            'state': 'APPROVED', 'applicability': 'APPLICABLE',
+            'corrections': {}, 'reviewer': 'Synthetic test reviewer',
+            'note': 'Approved synthetic source point',
+        },
+    })
+    assert response.status_code == 200
+
+
 @pytest.mark.parametrize('variable,mode,provider', [
     ('wind_speed_10m','forecast','ECMWF_FORECAST'), ('significant_wave_height','forecast','COPERNICUS_MARINE'),
     ('surface_current_speed','forecast','COPERNICUS_MARINE'), ('wind_speed_10m','historical','ERA5'),
@@ -175,13 +193,16 @@ def test_api_fetch_is_explicit_isolated_and_restart_empty(tmp_path):
         calls.append(1); result=mock_request(packet)
         r=requirement(); [r.pop(k) for k in ['source_verified','review_state','executable']]
         r['source_spans']=[{'page':1,'quotation':packet['pages'][0].text.strip()}]
-        result['environmental_requirements']=[r]; return result
+        result['environmental_requirements']=[r]
+        return result
     def provider(request): providers.append(1); return mock_evidence(request)
     client=TestClient(create_app(tmp_path,transport=transport,environmental_transports={'COPERNICUS_MARINE':provider}))
     boot=client.get('/api/session').json()['boot_id']; headers={'x-session-id':boot,'x-filename':'test.pdf'}
-    doc=client.post('/api/analyze',content=pdf_bytes(),headers=headers).json()
+    doc=client.post('/api/analyze',content=pdf_bytes(include_environmental=True),headers=headers).json()
     assert calls==[1] and providers==[]
+    approve_synthetic_point(client, doc, headers)
     options=inputs().model_dump(mode='json'); options['analysis_id']=doc['analysis_id']
+    options['latitude'], options['longitude'] = 54.1, -6.1
     result=client.post('/api/environmental',json=options,headers=headers)
     assert result.status_code==200 and providers==[1] and calls==[1]
     assert result.json()['executable_rules']==0

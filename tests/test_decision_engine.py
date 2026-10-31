@@ -36,7 +36,8 @@ def fixture(variable='significant_wave_height', hours=6, step=3600, value=1., **
         'temporal_resolution':step,'coverage':{'requested_start':T.isoformat(),'requested_end':(T+timedelta(hours=hours)).isoformat(),
         'temporal_resolution_seconds':step,'actual_start':T.isoformat(),'actual_end':(T+timedelta(hours=hours)).isoformat()},'points':points}
     env={'analysis_id':'run','requirements':[{**m,'request':{'coordinates':[54,-6]},'evidence':deepcopy(evidence),'evidence_request_key':'fixture-id','retrieval_status':'FETCHED'} for m in mappings]}
-    reviews={'analysis_run_id':'run','document_sha256':'a'*64,'requirements':[row]}
+    reviews={'analysis_run_id':'run','document_sha256':'a'*64,'requirements':[row],
+             'review_progress':{'complete':True}}
     time={'permit_valid_from':'2026-10-01T00:00:00Z','permit_valid_until':'2026-12-01T00:00:00Z','source_verified':True,
           'source_spans':[{'page':1,'quotation':'Explicit UTC validity'}]}
     position={'geometry_type':'point','point_verified':True,'latitude':54,'longitude':-6,

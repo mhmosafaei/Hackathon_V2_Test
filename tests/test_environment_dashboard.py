@@ -1,10 +1,12 @@
 from pathlib import Path
 import ast
+import pytest
 from src.environment.dashboard import load_belfast, evidence_readiness, marine_series, weather_series
 from src.environment.analytics import advisory_windows
 
 ROOT=Path('.')
 
+@pytest.mark.source_backed
 def test_belfast_cached_environment_loads_without_network():
  data=load_belfast(ROOT)
  assert data['weather']['model']=='ecmwf_ifs025'
@@ -14,6 +16,7 @@ def test_belfast_cached_environment_loads_without_network():
  wt,wv,wu=weather_series(data['weather'],'wind_speed_10m')
  assert len(wt)==len(wv) and wu=='km/h'
 
+@pytest.mark.source_backed
 def test_missing_evidence_cannot_form_advisory_window_and_external_sources_stay_external():
  assert advisory_windows(['a','b'],{'wind':[1,None],'wave':[1,1]},{'wind':2,'wave':2})[0]['samples']==1
  rows=evidence_readiness(ROOT)
