@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+import copy
 import math
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ from .errors import ProviderError, diagnostic
 from .sampling import MARINE_STEPS, timestep_bounds, source_depth, weather_spatial_limit, depth_metadata
 
 CURRENT_VARIABLES = {'eastward_current', 'northward_current', 'surface_current_speed', 'surface_current_direction'}
+WAVE_VARIABLES = {'significant_wave_height', 'mean_wave_period', 'mean_wave_direction'}
 
 
 def source_numeric_values(text):
@@ -488,6 +490,11 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
             # One uo/vo request is sufficient for all four current projections.
             retrieval_inputs['canonical_variable'] = 'current_vector_bundle'
             retrieval_inputs['dataset_variable'] = 'uo,vo'
+        if provider == 'COPERNICUS_MARINE' and routing['canonical_variable'] in WAVE_VARIABLES:
+            # VHM0/VTM02/VMDR share one dataset and one bounded subset.  Fetch
+            # the bundle once, then project each reviewed requirement locally.
+            retrieval_inputs['canonical_variable'] = 'wave_bundle'
+            retrieval_inputs['dataset_variable'] = 'VHM0,VTM02,VMDR'
         if provider in {'ECMWF_FORECAST', 'ERA5'}:
             retrieval_inputs['cell_selection'] = 'nearest'
         identity = sha256(json.dumps({'version': 2, 'analysis_id': analysis['analysis_id'],
@@ -499,7 +506,7 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
                 shared = fetched[identity]
                 if isinstance(shared, Exception):
                     raise shared
-                evidence = shared
+                evidence = copy.deepcopy(shared)
                 row['cache_state'] = 'REUSED'
             else:
                 evidence = None
@@ -509,7 +516,7 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
             if evidence is not None:
                 pass
             elif fresh:
-                evidence = cached['evidence']; row['cache_state'] = 'CACHED'
+                evidence = copy.deepcopy(cached['evidence']); row['cache_state'] = 'CACHED'
             else:
                 if dispatched >= 12:
                     row['notes_for_evaluation'] = 'Per-click provider request limit (12) reached; remaining requirements not fetched.'
@@ -522,12 +529,17 @@ def evaluate(analysis, inputs: EvaluationInput, cache_dir: Path, *, transports=N
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps({'retrieval':retrieval_inputs, 'request': request_data, 'evidence': evidence}, allow_nan=False, indent=2))
                 row['cache_state'] = 'FETCHED'
-            if provider == 'COPERNICUS_MARINE' and routing['canonical_variable'] in CURRENT_VARIABLES:
-                evidence = copernicus.project_current_or_wave_evidence(evidence, routing['canonical_variable'], variable)
+            # Keep the unmodified provider bundle in memory. Each requirement
+            # receives a private projection so one variable cannot overwrite
+            # source values, metadata, or units needed by another requirement.
+            fetched[identity] = copy.deepcopy(evidence)
+            if provider == 'COPERNICUS_MARINE' and (routing['canonical_variable'] in CURRENT_VARIABLES or
+                                                    routing['canonical_variable'] in WAVE_VARIABLES):
+                evidence = copernicus.project_current_or_wave_evidence(
+                    copy.deepcopy(evidence), routing['canonical_variable'], variable)
             if not depth_sensitive:
                 evidence = {**evidence, 'depth':None,'requested_depth':None,'requested_depth_m':None,
                             'selected_depth_m':None,'depth_difference_m':None}
-            fetched[identity] = evidence
             row['evidence'] = compatible_points(row, request, evidence)
             row['retrieval_status'] = row['cache_state']
             row['status'] = row['evidence']['status']

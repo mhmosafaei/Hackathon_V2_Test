@@ -83,13 +83,31 @@ def retrieve(request):
         completed = subprocess.run([sys.executable, '-m', 'src.environmental.copernicus'],
             input=request.model_dump_json(), text=True, capture_output=True, cwd=ROOT, timeout=WORKER_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
-        raise ProviderError('TIMEOUT', 'Copernicus worker exceeded the bounded 60-second retrieval timeout; no complete evidence bundle returned. Worker phase is unknown; no automatic retry.') from None
+        raise ProviderError('TIMEOUT', 'Copernicus worker exceeded the bounded 60-second retrieval timeout; no complete evidence bundle returned. Worker phase is unknown; no automatic retry.', {
+            'failure_stage': 'UNKNOWN_WORKER_PHASE',
+            'dataset_id': request.dataset_id,
+            'dataset_variable': request.dataset_variable,
+            'timeout_seconds': WORKER_TIMEOUT_SECONDS,
+        }) from None
     # Toolbox output may include sensitive server diagnostics. Never forward stdout/stderr.
     marker = 'PERMITPULSE_RESULT='
     lines = [line[len(marker):] for line in completed.stdout.splitlines() if line.startswith(marker)]
     if completed.returncode or not lines:
-        raise ProviderError('WORKER_RUNTIME', 'Copernicus worker exited without a usable structured response.')
-    result = json.loads(lines[-1])
+        raise ProviderError('WORKER_RUNTIME', 'Copernicus worker exited without a usable structured response.', {
+            'failure_stage': 'WORKER_STARTUP_OR_EXIT',
+            'worker_exit_code': completed.returncode,
+            'dataset_id': request.dataset_id,
+            'dataset_variable': request.dataset_variable,
+        })
+    try:
+        result = json.loads(lines[-1])
+    except (TypeError, ValueError):
+        raise ProviderError('WORKER_PROTOCOL', 'Copernicus worker returned an invalid structured response.', {
+            'failure_stage': 'WORKER_RESPONSE_PARSE',
+            'worker_exit_code': completed.returncode,
+            'dataset_id': request.dataset_id,
+            'dataset_variable': request.dataset_variable,
+        }) from None
     if 'error_type' in result:
         raise ProviderError(result.get('error_category','PROVIDER_RUNTIME'),
             result.get('error_message','Copernicus retrieval failed; no usable evidence returned.'), result.get('error_metadata'))
@@ -117,12 +135,20 @@ def worker(request):
     lat, lon = request.coordinates
     # The vector current product supplies uo/vo together. Other products retain
     # their established one-variable request contract.
-    variables = ['uo', 'vo'] if group == 'currents' else [variable]
+    variables = (['uo', 'vo'] if group == 'currents' else
+                 ['VHM0', 'VTM02', 'VMDR'] if group == 'waves' else [variable])
     kwargs = dict(dataset_id=product['dataset'], variables=variables,
         minimum_latitude=lat-.05, maximum_latitude=lat+.05,
         minimum_longitude=lon-.05, maximum_longitude=lon+.05,
         start_datetime=request.provider_query_start or request.start_time,
         end_datetime=request.provider_query_end or request.end_time, chunk_size_limit=2_000_000)
+    # Pass deployment credentials explicitly to the isolated SDK call.  The
+    # Toolbox also discovers these names implicitly, but explicit propagation
+    # avoids losing the Render worker environment across the process boundary.
+    if user:
+        kwargs['username'] = user
+    if password:
+        kwargs['password'] = password
     if request.depth is not None:
         kwargs.update(minimum_depth=request.depth, maximum_depth=request.depth)
     if group == 'oxygen':
@@ -207,6 +233,22 @@ def worker(request):
             u_grid = np.asarray(first_grid['uo'].values)
             v_grid = np.asarray(first_grid['vo'].values)
             raw = np.where(np.isfinite(u_grid) & np.isfinite(v_grid), u_grid, np.nan)
+        elif group == 'waves':
+            # Select only cells where every wave field is finite for the whole
+            # returned span. Selecting on VHM0 alone can attach period or
+            # direction values from a masked/different-validity cell.
+            wave_units = {name: str(ds[name].attrs.get('units') or '').strip().lower() for name in variables}
+            expected_units = {'VHM0': {'m'}, 'VTM02': {'s'}, 'VMDR': {'degree', 'degrees'}}
+            if any(wave_units[name] not in expected_units[name] for name in variables):
+                raise ProviderError('UNIT_INCOMPATIBLE', 'Wave bundle fields do not declare the expected native units.')
+            wave_grid = _stage('spatial_selection', lambda: ds[variables].load())
+            valid = None
+            for name in variables:
+                values = np.asarray(wave_grid[name].values)
+                field_valid = np.all(np.isfinite(values), axis=0)
+                valid = field_valid if valid is None else (valid & field_valid)
+            first_wave = np.asarray(wave_grid[variables[0]].isel(time=0).values)
+            raw = np.where(valid, first_wave, np.nan)
         else:
             raw = np.asarray(field.values)
         grid = _stage('spatial_selection', lambda: nearest_valid(lat, lon, [(float(a), float(b), float(raw[i,j]) if np.isfinite(raw[i,j]) else None)
@@ -246,6 +288,8 @@ def worker(request):
         points = []
         for i, moment in enumerate(selected.time.values):
             source_values = {name: float(selected[name].isel(time=i).values) for name in variables}
+            source_units = ({name: selected[name].attrs.get('units') for name in variables}
+                            if group == 'waves' else None)
             first = source_values[variables[0]]
             value = first
             unit = selected[variables[0]].attrs.get('units')
@@ -268,7 +312,8 @@ def worker(request):
                 'component_values': {'uo': first if math.isfinite(first) else None,
                                      'vo': second if math.isfinite(second) else None} if group == 'currents' else None,
                 **({'component_units': component_units} if group == 'currents' else {}),
-                'source_values': {name: (value if math.isfinite(value) else None) for name, value in source_values.items()} if group == 'waves' else None})
+                'source_values': {name: (value if math.isfinite(value) else None) for name, value in source_values.items()} if group == 'waves' else None,
+                'source_units': source_units})
         return {'canonical_variable': request.canonical_variable, 'provider': 'COPERNICUS_MARINE', 'dataset_id': product['dataset'],
             'dataset_name': product['product'], 'dataset_variable': variable, 'source_version': ds.attrs.get('dataset_version'),
             'data_type': 'SATELLITE_OBSERVATION' if product['mode'] == 'OBSERVATION' else 'MODEL_FORECAST',
@@ -286,10 +331,10 @@ def worker(request):
                 'Current direction is towards, clockwise from north. Wave direction convention is provider-defined and is not converted between from/towards. No tide or local sensor equivalence. '
                 'Modelled oxygen is supportive and not equivalent to required in-situ monitoring. '
                 'Daily products cannot resolve subdaily excursions.',
-            'direction_convention': ('TOWARDS_CLOCKWISE_FROM_NORTH' if request.canonical_variable == 'surface_current_direction' else
-                                     'PROVIDER_DEFINED_NOT_NORMALIZED' if request.canonical_variable == 'mean_wave_direction' else None),
-            **({'direction_metadata': {key: ds[variable].attrs.get(key) for key in ('long_name','standard_name','units')}}
-               if request.canonical_variable == 'mean_wave_direction' else {}),
+             'direction_convention': ('TOWARDS_CLOCKWISE_FROM_NORTH' if request.canonical_variable == 'surface_current_direction' else
+                                      'PROVIDER_DEFINED_NOT_NORMALIZED' if group == 'waves' else None),
+             **({'direction_metadata': {key: ds['VMDR'].attrs.get(key) for key in ('long_name','standard_name','units')}}
+                if group == 'waves' else {}),
             'catalogue_reference_verified_at': product.get('live_verified')}
     finally:
         ds.close()
@@ -312,6 +357,28 @@ def project_current_or_wave_evidence(evidence, canonical_variable, dataset_varia
     result = copy.deepcopy(evidence)
     result['canonical_variable'] = canonical_variable
     result['dataset_variable'] = dataset_variable
+    if canonical_variable in {'significant_wave_height', 'mean_wave_period', 'mean_wave_direction'}:
+        if canonical_variable == 'mean_wave_direction':
+            result['direction_convention'] = 'PROVIDER_DEFINED_NOT_NORMALIZED'
+        else:
+            # Direction provenance belongs only to the direction projection;
+            # never leak it into height or period evidence.
+            result.pop('direction_convention', None)
+            result.pop('direction_metadata', None)
+            if isinstance(result.get('notes'), str):
+                result['notes'] = result['notes'].replace(
+                    'Wave direction convention is provider-defined and is not converted between from/towards. ', '')
+        for point in result.get('points', []):
+            source_values = point.get('source_values') or {}
+            source_units = point.get('source_units') or {}
+            value = source_values.get(dataset_variable)
+            valid = (isinstance(value, (int, float)) and not isinstance(value, bool)
+                     and math.isfinite(value))
+            point['raw_value'] = value if valid else None
+            # Preserve the provider's native unit exactly.  A missing unit is
+            # not replaced with a guessed value.
+            point['unit'] = source_units.get(dataset_variable)
+        return result
     if canonical_variable in {'eastward_current', 'northward_current', 'surface_current_speed', 'surface_current_direction'}:
         result['direction_convention'] = 'TOWARDS_CLOCKWISE_FROM_NORTH' if canonical_variable == 'surface_current_direction' else None
     for point in result.get('points', []):
@@ -332,7 +399,10 @@ def project_current_or_wave_evidence(evidence, canonical_variable, dataset_varia
             point['derived_from'] = ['uo', 'vo']
         elif canonical_variable in {'significant_wave_height', 'mean_wave_period', 'mean_wave_direction'}:
             source = point.get('source_values') or {}
-            if dataset_variable in source:
-                point['raw_value'] = source[dataset_variable]
-                point['unit'] = {'VHM0':'m','VTM02':'s','VMDR':'degrees'}.get(dataset_variable, point.get('unit'))
+            source_units = point.get('source_units') or {}
+            value = source.get(dataset_variable)
+            valid = (isinstance(value, (int, float)) and not isinstance(value, bool)
+                     and math.isfinite(value))
+            point['raw_value'] = value if valid else None
+            point['unit'] = source_units.get(dataset_variable)
     return result

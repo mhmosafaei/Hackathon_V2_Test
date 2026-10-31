@@ -30,6 +30,16 @@ def vector_dataset():
     return ds
 
 
+def wave_dataset():
+    times=np.array(['2026-10-14T00:00','2026-10-14T01:00'],dtype='datetime64[m]')
+    ds=xr.Dataset({'VHM0':(('time','latitude','longitude'),np.full((2,1,1),1.2)),
+                   'VTM02':(('time','latitude','longitude'),np.full((2,1,1),4.5)),
+                   'VMDR':(('time','latitude','longitude'),np.full((2,1,1),180.))},
+        coords={'time':times,'latitude':[54.],'longitude':[-6.]})
+    ds.VHM0.attrs['units']='m'; ds.VTM02.attrs['units']='s'; ds.VMDR.attrs['units']='degrees'
+    return ds
+
+
 def oxygen_dataset(depths=(1.,), unit='mmol m-3'):
     ds=xr.Dataset({'o2':(('time','depth','latitude','longitude'),np.full((1,len(depths),1,1),200.))},
         coords={'time':np.array(['2026-10-14'],dtype='datetime64[D]'),'depth':list(depths),'latitude':[54.],'longitude':[-6.]})
@@ -64,6 +74,117 @@ def test_vector_load_is_batched_point_series_and_native_grid(monkeypatch):
     assert evidence['points'][0]['component_values']=={'uo':-.8,'vo':.6}
     assert evidence['points'][0]['component_units']=={'uo':'m s-1','vo':'m s-1'}
     assert evidence['latitude']==54 and evidence['longitude']==-6 and evidence['distance_km']==0
+
+
+def test_worker_propagates_configured_credentials_without_persisting_them(monkeypatch):
+    monkeypatch.setenv('COPERNICUSMARINE_SERVICE_USERNAME', 'offline-user')
+    monkeypatch.setenv('COPERNICUSMARINE_SERVICE_PASSWORD', 'offline-password')
+    calls = mock_client(monkeypatch, vector_dataset())
+    copernicus.worker(request())
+    assert calls[0]['username'] == 'offline-user'
+    assert calls[0]['password'] == 'offline-password'
+
+
+def test_wave_worker_fetches_shared_bundle_and_projects_requested_variable(monkeypatch):
+    calls = mock_client(monkeypatch, wave_dataset())
+    evidence = copernicus.worker(request('mean_wave_period'))
+    assert calls[0]['variables'] == ['VHM0', 'VTM02', 'VMDR']
+    assert evidence['points'][0]['source_values']['VTM02'] == 4.5
+    projected = copernicus.project_current_or_wave_evidence(evidence, 'mean_wave_period', 'VTM02')
+    assert projected['points'][0]['raw_value'] == 4.5
+    assert projected['points'][0]['unit'] == 's'
+    assert projected['points'][0]['source_units'] == {'VHM0': 'm', 'VTM02': 's', 'VMDR': 'degrees'}
+    assert 'direction_convention' not in projected
+    assert 'direction_metadata' not in projected
+
+    direction = copernicus.project_current_or_wave_evidence(evidence, 'mean_wave_direction', 'VMDR')
+    assert direction['points'][0]['raw_value'] == 180.0
+    assert direction['points'][0]['unit'] == 'degrees'
+    assert direction['direction_convention'] == 'PROVIDER_DEFINED_NOT_NORMALIZED'
+
+    height = copernicus.project_current_or_wave_evidence(evidence, 'significant_wave_height', 'VHM0')
+    assert height['points'][0]['raw_value'] == 1.2
+    assert height['points'][0]['unit'] == 'm'
+    assert 'direction_convention' not in height
+    assert 'direction_metadata' not in height
+
+
+def test_wave_bundle_preserves_independent_threshold_evaluations(tmp_path, monkeypatch):
+    evaluation_inputs = inputs()
+    ds = wave_dataset().assign_coords(time=np.array([
+        np.datetime64(evaluation_inputs.start_time.replace(tzinfo=None)),
+        np.datetime64(evaluation_inputs.end_time.replace(tzinfo=None)),
+    ]))
+    calls = mock_client(monkeypatch, ds)
+    raw = [
+        requirement('significant_wave_height', condition_id='3', threshold=1.0, operator='>', unit='m',
+                    source_spans=[{'page': 1, 'quotation': 'Wave height above 1 m.'}]),
+        requirement('mean_wave_period', condition_id='4', threshold=5.0, operator='>', unit='s',
+                    source_spans=[{'page': 1, 'quotation': 'Wave period above 5 s.'}]),
+        requirement('mean_wave_direction', condition_id='5', threshold=None, operator=None, unit='degrees',
+                    source_spans=[{'page': 1, 'quotation': 'Wave direction in degrees.'}]),
+    ]
+    result = evaluate(analysis(*raw), evaluation_inputs, tmp_path, transports={'COPERNICUS_MARINE': copernicus.worker})
+    assert len(calls) == 1
+    rows = {row['condition_id']: row for row in result['requirements']}
+    assert rows['3']['evidence']['points'][0]['normalized_unit'] == 'm'
+    assert rows['4']['evidence']['points'][0]['normalized_unit'] == 's'
+    assert rows['3']['evidence']['points'][0]['comparison'] is True
+    assert rows['4']['evidence']['points'][0]['comparison'] is False
+    assert rows['5']['evidence']['points'][0]['normalized_unit'] == 'degrees'
+    assert rows['5']['evidence']['points'][0]['raw_value'] == 180.0
+
+
+def test_wave_bundle_order_and_disk_cache_preserve_each_projection(tmp_path, monkeypatch):
+    evaluation_inputs = inputs()
+    ds = wave_dataset().assign_coords(time=np.array([
+        np.datetime64(evaluation_inputs.start_time.replace(tzinfo=None)),
+        np.datetime64(evaluation_inputs.end_time.replace(tzinfo=None)),
+    ]))
+    calls = []
+    class Client:
+        def open_dataset(self, **kwargs):
+            calls.append(kwargs)
+            return ds.copy(deep=True)
+    monkeypatch.setattr(copernicus, '_load_worker_dependencies', lambda: (np, Client()))
+    raw = [
+        requirement('significant_wave_height', condition_id='3', threshold=1.0, operator='>', unit='m', source_spans=[{'page': 1, 'quotation': 'Wave height.'}]),
+        requirement('mean_wave_period', condition_id='4', threshold=5.0, operator='>', unit='s', source_spans=[{'page': 1, 'quotation': 'Wave period.'}]),
+        requirement('mean_wave_direction', condition_id='5', threshold=None, operator=None, unit='degrees', source_spans=[{'page': 1, 'quotation': 'Wave direction.'}]),
+    ]
+    first = evaluate(analysis(*raw), evaluation_inputs, tmp_path, transports={'COPERNICUS_MARINE': copernicus.worker})
+    assert len(calls) == 1
+    second = evaluate(analysis(*reversed(raw)), evaluation_inputs, tmp_path, transports={'COPERNICUS_MARINE': lambda _: pytest.fail('disk cache was not reused')})
+    for result in (first, second):
+        rows = {row['condition_id']: row for row in result['requirements']}
+        assert rows['3']['evidence']['points'][0]['raw_value'] == 1.2
+        assert rows['4']['evidence']['points'][0]['raw_value'] == 4.5
+        assert rows['5']['evidence']['points'][0]['raw_value'] == 180.0
+        assert rows['5']['evidence']['direction_convention'] == 'PROVIDER_DEFINED_NOT_NORMALIZED'
+
+
+def test_wave_bundle_rejects_cell_when_one_field_is_masked(monkeypatch):
+    ds = wave_dataset()
+    ds['VMDR'].values[0, 0, 0] = np.nan
+    mock_client(monkeypatch, ds)
+    with pytest.raises(ProviderError) as caught:
+        copernicus.worker(request('significant_wave_height'))
+    assert caught.value.category == 'SPATIAL_COVERAGE'
+
+
+def test_wave_projection_missing_variable_fails_closed_without_reusing_height():
+    source = {
+        'points': [{'source_values': {'VHM0': 1.2, 'VMDR': 180.0},
+                    'source_units': {'VHM0': 'm', 'VTM02': 's', 'VMDR': 'degrees'},
+                    'raw_value': 1.2, 'unit': 'm'}],
+        'direction_convention': 'PROVIDER_DEFINED_NOT_NORMALIZED',
+        'direction_metadata': {'units': 'degrees'},
+    }
+    projected = copernicus.project_current_or_wave_evidence(source, 'mean_wave_period', 'VTM02')
+    assert projected['points'][0]['raw_value'] is None
+    assert projected['points'][0]['unit'] == 's'
+    assert source['points'][0]['raw_value'] == 1.2
+    assert source['direction_convention'] == 'PROVIDER_DEFINED_NOT_NORMALIZED'
 
 
 def test_four_current_requirements_share_one_transport(tmp_path):
@@ -112,6 +233,22 @@ def test_timeout_is_bounded_and_no_retry(monkeypatch):
     with pytest.raises(ProviderError) as caught:copernicus.retrieve(request())
     assert caught.value.category=='TIMEOUT' and 'phase is unknown' in caught.value.safe_message
     assert len(calls)==1 and calls[0]['timeout']==60
+
+
+def test_worker_exit_diagnostic_is_sanitized_and_structured(monkeypatch):
+    class Completed:
+        returncode = 1
+        stdout = ''
+    monkeypatch.setattr(copernicus.subprocess, 'run', lambda *args, **kwargs: Completed())
+    with pytest.raises(ProviderError) as caught:
+        copernicus.retrieve(request())
+    assert caught.value.category == 'WORKER_RUNTIME'
+    assert caught.value.metadata == {
+        'failure_stage': 'WORKER_STARTUP_OR_EXIT',
+        'worker_exit_code': 1,
+        'dataset_id': request().dataset_id,
+        'dataset_variable': request().dataset_variable,
+    }
 
 
 @pytest.mark.parametrize('prefix',['approximately','about','around'])
